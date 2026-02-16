@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -107,53 +106,31 @@ func buildAppContext(ctx context.Context) (*common.AppContext, error) {
 }
 
 func isInteractiveTerminal() bool {
-	st, err := os.Stdin.Stat()
+	in, err := os.Stdin.Stat()
 	if err != nil {
 		return false
 	}
-	return (st.Mode() & os.ModeCharDevice) != 0
+	out, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return shouldUseInteractive(in.Mode(), out.Mode(), os.Getenv("TERM"))
 }
 
-func runInteractiveMenu() error {
-	reader := bufio.NewReader(os.Stdin)
-	for {
-		fmt.Println("Talpa interactive menu:")
-		fmt.Println("1) Clean")
-		fmt.Println("2) Analyze Disk")
-		fmt.Println("3) Purge Projects")
-		fmt.Println("4) Status")
-		fmt.Println("5) Exit")
-		fmt.Print("Select [1-5]: ")
-
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			return err
-		}
-		line = strings.TrimSpace(line)
-
-		switch line {
-		case "1":
-			if err := runSelf("clean", "--dry-run"); err != nil {
-				fmt.Printf("error: %v\n", err)
-			}
-		case "2":
-			if err := runSelf("analyze"); err != nil {
-				fmt.Printf("error: %v\n", err)
-			}
-		case "3":
-			if err := runSelf("purge", "--dry-run"); err != nil {
-				fmt.Printf("error: %v\n", err)
-			}
-		case "4":
-			if err := runSelf("status"); err != nil {
-				fmt.Printf("error: %v\n", err)
-			}
-		case "5":
-			return nil
-		default:
-			fmt.Println("Invalid selection")
-		}
+func shouldUseInteractive(stdinMode os.FileMode, stdoutMode os.FileMode, term string) bool {
+	if !isCharDevice(stdinMode) || !isCharDevice(stdoutMode) {
+		return false
 	}
+	return !isDumbTerm(term)
+}
+
+func isCharDevice(mode os.FileMode) bool {
+	return (mode & os.ModeCharDevice) != 0
+}
+
+func isDumbTerm(term string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(term))
+	return normalized == "" || normalized == "dumb"
 }
 
 func runSelf(args ...string) error {
