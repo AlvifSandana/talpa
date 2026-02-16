@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"talpa/internal/app/common"
@@ -25,10 +27,13 @@ type optimizeAdapter struct {
 }
 
 var (
-	lookPath = exec.LookPath
-	absPath  = filepath.Abs
-	runCmd   = runCommand
-	getEUID  = os.Geteuid
+	lookPath                   = exec.LookPath
+	absPath                    = filepath.Abs
+	runCmd                     = runCommand
+	getEUID                    = os.Geteuid
+	checkLowBattery            = isLowBattery
+	checkRootFSReadOnly        = isRootFSReadOnly
+	checkPackageManagerBusyFor = isPackageManagerBusyFor
 )
 
 func NewService() Service { return Service{} }
@@ -69,6 +74,7 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 		}
 		if !app.Options.DryRun {
 			notRoot := getEUID() != 0
+			globalPreflightReason := optimizeGlobalPreflightReason()
 			for i := range items {
 				if !items[i].Selected {
 					continue
@@ -102,6 +108,21 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 					errCount++
 					entry.Result = items[i].Result
 					entry.Error = "missing adapter command"
+					if err := app.Logger.Log(ctx, entry); err != nil {
+						errCount++
+					}
+					continue
+				}
+
+				reason := globalPreflightReason
+				if reason == "" {
+					reason = optimizeAdapterPreflightReason(adapter.Name)
+				}
+
+				if reason != "" {
+					items[i].Result = "skipped"
+					entry.Result = items[i].Result
+					entry.Error = reason
 					if err := app.Logger.Log(ctx, entry); err != nil {
 						errCount++
 					}
@@ -159,6 +180,170 @@ func runCommand(ctx context.Context, name string, args ...string) error {
 	defer cancel()
 	cmd := exec.CommandContext(cmdCtx, name, args...)
 	return cmd.Run()
+}
+
+func optimizeGlobalPreflightReason() string {
+	if checkLowBattery() {
+		return "preflight blocked: low battery"
+	}
+	if checkRootFSReadOnly() {
+		return "preflight blocked: root filesystem is read-only"
+	}
+	return ""
+}
+
+func optimizeAdapterPreflightReason(manager string) string {
+	if checkPackageManagerBusyFor(manager) {
+		return "preflight blocked: package manager is busy"
+	}
+	return ""
+}
+
+func isLowBattery() bool {
+	base := "/sys/class/power_supply"
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		typeBytes, err := os.ReadFile(filepath.Join(base, e.Name(), "type"))
+		if err != nil {
+			continue
+		}
+		if strings.TrimSpace(strings.ToLower(string(typeBytes))) != "battery" {
+			continue
+		}
+		statusBytes, err := os.ReadFile(filepath.Join(base, e.Name(), "status"))
+		if err != nil {
+			continue
+		}
+		status := strings.TrimSpace(strings.ToLower(string(statusBytes)))
+		if status == "charging" || status == "full" {
+			continue
+		}
+
+		capBytes, err := os.ReadFile(filepath.Join(base, e.Name(), "capacity"))
+		if err != nil {
+			continue
+		}
+		capValue, err := strconv.Atoi(strings.TrimSpace(string(capBytes)))
+		if err != nil {
+			continue
+		}
+		if capValue <= 20 {
+			return true
+		}
+	}
+	return false
+}
+
+func isRootFSReadOnly() bool {
+	b, err := os.ReadFile("/proc/mounts")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 4 {
+			continue
+		}
+		if fields[1] != "/" {
+			continue
+		}
+		options := strings.Split(fields[3], ",")
+		for _, opt := range options {
+			if strings.TrimSpace(opt) == "ro" {
+				return true
+			}
+		}
+		return false
+	}
+	return false
+}
+
+func isPackageManagerBusyFor(manager string) bool {
+	manager = strings.TrimSpace(strings.ToLower(manager))
+	if manager == "" {
+		return false
+	}
+
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return false
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if _, err := strconv.Atoi(entry.Name()); err != nil {
+			continue
+		}
+
+		commPath := filepath.Join("/proc", entry.Name(), "comm")
+		if b, err := os.ReadFile(commPath); err == nil {
+			if isPackageManagerProcessNameFor(manager, strings.TrimSpace(strings.ToLower(string(b)))) {
+				return true
+			}
+		}
+
+		cmdlinePath := filepath.Join("/proc", entry.Name(), "cmdline")
+		if b, err := os.ReadFile(cmdlinePath); err == nil {
+			firstArg := cmdlineFirstArg(string(b))
+			if isPackageManagerProcessNameFor(manager, strings.ToLower(filepath.Base(firstArg))) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func isPackageManagerProcessNameFor(manager, name string) bool {
+	if name == "" {
+		return false
+	}
+
+	managerProcesses := map[string]map[string]struct{}{
+		"apt": {
+			"apt":      {},
+			"apt-get":  {},
+			"aptitude": {},
+			"dpkg":     {},
+		},
+		"dnf": {
+			"dnf": {},
+			"yum": {},
+			"rpm": {},
+		},
+		"pacman": {
+			"pacman": {},
+		},
+	}
+
+	processes, ok := managerProcesses[manager]
+	if !ok {
+		return false
+	}
+	_, matched := processes[name]
+	return matched
+}
+
+func cmdlineFirstArg(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	parts := strings.Split(raw, "\x00")
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(parts[0])
 }
 
 func newPlanItem(id, ruleID, path, category string, risk model.RiskLevel, requiresRoot bool) model.CandidateItem {
