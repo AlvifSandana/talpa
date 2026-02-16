@@ -1,0 +1,68 @@
+package purge
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"talpa/internal/app/common"
+	"talpa/internal/domain/model"
+	"talpa/internal/infra/logging"
+)
+
+func TestRunDryRunGoldenJSON(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	artifactDir := filepath.Join(home, "Projects", "app", "node_modules")
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(artifactDir, "index.js"), []byte("var a = 1;"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	old := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(artifactDir, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: true}, Logger: logging.NewNoopLogger()}
+	res, err := NewService().Run(context.Background(), app, []string{filepath.Join(home, "Projects")})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	normalizePurgeResult(&res, home)
+	b, err := json.MarshalIndent(res, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want, err := os.ReadFile(filepath.Join("testdata", "purge_dry_run.golden.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := strings.TrimSpace(string(b))
+	w := strings.TrimSpace(string(want))
+	if got != w {
+		t.Fatalf("golden mismatch\n--- got ---\n%s\n--- want ---\n%s", got, w)
+	}
+}
+
+func normalizePurgeResult(res *model.CommandResult, home string) {
+	norm := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	res.Timestamp = norm
+	res.DurationMS = 0
+	for i := range res.Items {
+		res.Items[i].ID = "purge-" + strconv.Itoa(i+1)
+		res.Items[i].Path = strings.ReplaceAll(res.Items[i].Path, home, "$HOME")
+		res.Items[i].LastModified = norm
+	}
+}

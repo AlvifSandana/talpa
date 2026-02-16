@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "command": "update",
+  "timestamp": "2000-01-01T00:00:00Z",
+  "duration_ms": 0,
+  "dry_run": true,
+  "summary": {
+    "items_total": 1,
+    "items_selected": 1,
+    "estimated_freed_bytes": 0,
+    "errors": 0
+  },
+  "items": [
+    {
+      "id": "update-1",
+      "rule_id": "update.binary",
+      "path": "$HOME/.local/bin/talpa",
+      "size_bytes": 123,
+      "last_modified": "2000-01-01T00:00:00Z",
+      "category": "self_update",
+      "risk": "medium",
+      "selected": true,
+      "requires_root": false,
+      "result": "planned"
+    }
+  ]
+}

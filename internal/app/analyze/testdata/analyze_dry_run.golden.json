@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0",
+  "command": "analyze",
+  "timestamp": "2000-01-01T00:00:00Z",
+  "duration_ms": 0,
+  "dry_run": true,
+  "summary": {
+    "items_total": 2,
+    "items_selected": 2,
+    "estimated_freed_bytes": 14,
+    "errors": 0
+  },
+  "items": [
+    {
+      "id": "analyze-1",
+      "rule_id": "",
+      "path": "$HOME/workspace/project/cache/blob.bin",
+      "size_bytes": 10,
+      "last_modified": "2000-01-01T00:00:00Z",
+      "category": "tree_node",
+      "risk": "medium",
+      "selected": true,
+      "requires_root": false,
+      "result": "candidate"
+    },
+    {
+      "id": "analyze-2",
+      "rule_id": "",
+      "path": "$HOME/workspace/project/docs/readme.md",
+      "size_bytes": 4,
+      "last_modified": "2000-01-01T00:00:00Z",
+      "category": "tree_node",
+      "risk": "medium",
+      "selected": true,
+      "requires_root": false,
+      "result": "candidate"
+    }
+  ]
+}

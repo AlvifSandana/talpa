@@ -43,25 +43,34 @@ type NetMetric struct {
 	RXBytes uint64 `json:"rx_bytes"`
 }
 
+var (
+	loadAvgReader    = readLoadAvg
+	memoryReader     = readMemoryUsed
+	diskUsageReader  = readDiskUsage
+	netReader        = readNetDev
+	cpuUsageReader   = readCPUUsage
+	topProcessReader = system.TopProcesses
+)
+
 func NewService() Service { return Service{} }
 
 func (Service) Run(ctx context.Context, app *common.AppContext) (model.CommandResult, error) {
 	_ = ctx
 	start := time.Now()
 
-	load := readLoadAvg()
-	mem := readMemoryUsed()
-	disk := readDiskUsage("/")
-	net := readNetDev()
+	load := loadAvgReader()
+	mem := memoryReader()
+	disk := diskUsageReader("/")
+	net := netReader()
 
-	top := system.TopProcesses(app.Options.StatusTop)
+	top := topProcessReader(app.Options.StatusTop)
 	procs := make([]Process, 0, len(top))
 	for _, p := range top {
 		procs = append(procs, Process{PID: p.PID, Command: p.Command, CPUPercent: p.CPUPercent, MemBytes: p.MemBytes})
 	}
 
 	metrics := Metrics{
-		CPUUsage:        readCPUUsage(),
+		CPUUsage:        cpuUsageReader(),
 		LoadAvg:         load,
 		MemoryUsedBytes: mem,
 		DiskUsage:       []DiskMetric{disk},

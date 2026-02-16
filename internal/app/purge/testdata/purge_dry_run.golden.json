@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "command": "purge",
+  "timestamp": "2000-01-01T00:00:00Z",
+  "duration_ms": 0,
+  "dry_run": true,
+  "summary": {
+    "items_total": 1,
+    "items_selected": 1,
+    "estimated_freed_bytes": 10,
+    "errors": 0
+  },
+  "items": [
+    {
+      "id": "purge-1",
+      "rule_id": "purge.node_modules",
+      "path": "$HOME/Projects/app/node_modules",
+      "size_bytes": 10,
+      "last_modified": "2000-01-01T00:00:00Z",
+      "category": "project_artifact",
+      "risk": "low",
+      "selected": true,
+      "requires_root": false,
+      "result": "planned"
+    }
+  ]
+}
