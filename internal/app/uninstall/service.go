@@ -24,6 +24,7 @@ type Options struct {
 
 type uninstallAdapter struct {
 	Backend      string
+	Executable   string
 	RequiresRoot bool
 	BuildCommand func(name string) []string
 }
@@ -39,6 +40,7 @@ var (
 	osStat             = os.Stat
 	lookPath           = exec.LookPath
 	absPath            = filepath.Abs
+	resolveExec        = resolveTrustedExecutable
 	runCmd             = runCommand
 	getEUID            = os.Geteuid
 	safeDelete         = safety.SafeDelete
@@ -55,6 +57,14 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 	exe, exeErr := osExecutable()
 	binaryTargets := uninstallBinaryTargets(home, exe, exeErr)
 	adapters := uninstallAdapters()
+	availableExecutables := make(map[string]string, len(adapters))
+	for _, a := range adapters {
+		resolved, err := resolveExec(a.Executable)
+		if err != nil {
+			continue
+		}
+		availableExecutables[a.Backend] = resolved
+	}
 	targets, err := parseUninstallTargets(opts.Targets)
 	if err != nil {
 		return model.CommandResult{}, err
@@ -78,17 +88,30 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 		if !ok {
 			continue
 		}
+		selected := true
+		result := "planned"
+		if _, ok := availableExecutables[t.Backend]; !ok {
+			selected = false
+			result = "skipped"
+		}
 		items = append(items, model.CandidateItem{
 			ID:           fmt.Sprintf("uninstall-target-%d", i+1),
 			RuleID:       fmt.Sprintf("uninstall.pkg.%s", t.Backend),
 			Path:         fmt.Sprintf("%s:%s", t.Backend, t.Name),
 			Category:     "package",
 			Risk:         model.RiskHigh,
-			Selected:     true,
+			Selected:     selected,
 			RequiresRoot: adapter.RequiresRoot,
 			LastModified: time.Now().UTC(),
-			Result:       "planned",
+			Result:       result,
 		})
+	}
+
+	selected := 0
+	for _, item := range items {
+		if item.Selected {
+			selected++
+		}
 	}
 
 	errCount := 0
@@ -133,6 +156,16 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 						}
 						continue
 					}
+					resolved, ok := availableExecutables[target.Backend]
+					if !ok {
+						items[i].Result = "skipped"
+						entry.Result = items[i].Result
+						entry.Error = "backend unavailable"
+						if err := app.Logger.Log(ctx, entry); err != nil {
+							errCount++
+						}
+						continue
+					}
 					if adapter.RequiresRoot && getEUID() != 0 {
 						items[i].Result = "skipped"
 						entry.Result = items[i].Result
@@ -148,17 +181,6 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 						errCount++
 						entry.Result = items[i].Result
 						entry.Error = "invalid uninstall command"
-						if err := app.Logger.Log(ctx, entry); err != nil {
-							errCount++
-						}
-						continue
-					}
-					resolved, err := resolveTrustedExecutable(cmd[0])
-					if err != nil {
-						items[i].Result = "error"
-						errCount++
-						entry.Result = items[i].Result
-						entry.Error = err.Error()
 						if err := app.Logger.Log(ctx, entry); err != nil {
 							errCount++
 						}
@@ -227,7 +249,7 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 		DryRun:        app.Options.DryRun,
 		Summary: model.Summary{
 			ItemsTotal:    len(items),
-			ItemsSelected: len(items),
+			ItemsSelected: selected,
 			Errors:        errCount,
 		},
 		Items: items,
@@ -279,12 +301,12 @@ func trustedExecutablePath(executable string, canonical []string) (bool, string)
 
 func uninstallAdapters() []uninstallAdapter {
 	return []uninstallAdapter{
-		{Backend: "apt", RequiresRoot: true, BuildCommand: func(name string) []string { return []string{"apt-get", "remove", "-y", "--", name} }},
-		{Backend: "dnf", RequiresRoot: true, BuildCommand: func(name string) []string { return []string{"dnf", "remove", "-y", "--", name} }},
-		{Backend: "pacman", RequiresRoot: true, BuildCommand: func(name string) []string { return []string{"pacman", "-Rns", "--noconfirm", "--", name} }},
-		{Backend: "zypper", RequiresRoot: true, BuildCommand: func(name string) []string { return []string{"zypper", "remove", "-y", "--", name} }},
-		{Backend: "snap", RequiresRoot: true, BuildCommand: func(name string) []string { return []string{"snap", "remove", "--purge", "--", name} }},
-		{Backend: "flatpak", RequiresRoot: false, BuildCommand: func(name string) []string { return []string{"flatpak", "uninstall", "--delete-data", "-y", "--", name} }},
+		{Backend: "apt", Executable: "apt-get", RequiresRoot: true, BuildCommand: func(name string) []string { return []string{"apt-get", "remove", "-y", "--", name} }},
+		{Backend: "dnf", Executable: "dnf", RequiresRoot: true, BuildCommand: func(name string) []string { return []string{"dnf", "remove", "-y", "--", name} }},
+		{Backend: "pacman", Executable: "pacman", RequiresRoot: true, BuildCommand: func(name string) []string { return []string{"pacman", "-Rns", "--noconfirm", "--", name} }},
+		{Backend: "zypper", Executable: "zypper", RequiresRoot: true, BuildCommand: func(name string) []string { return []string{"zypper", "remove", "-y", "--", name} }},
+		{Backend: "snap", Executable: "snap", RequiresRoot: true, BuildCommand: func(name string) []string { return []string{"snap", "remove", "--purge", "--", name} }},
+		{Backend: "flatpak", Executable: "flatpak", RequiresRoot: false, BuildCommand: func(name string) []string { return []string{"flatpak", "uninstall", "--delete-data", "-y", "--", name} }},
 	}
 }
 

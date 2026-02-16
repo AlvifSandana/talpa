@@ -166,11 +166,13 @@ func TestRunApplyExecutesAptTarget(t *testing.T) {
 	savedUID := getEUID
 	savedLookPath := lookPath
 	savedAbsPath := absPath
+	savedResolveExec := resolveExec
 	defer func() {
 		runCmd = savedRun
 		getEUID = savedUID
 		lookPath = savedLookPath
 		absPath = savedAbsPath
+		resolveExec = savedResolveExec
 	}()
 
 	called := false
@@ -188,6 +190,7 @@ func TestRunApplyExecutesAptTarget(t *testing.T) {
 	getEUID = func() int { return 0 }
 	lookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
 	absPath = func(path string) (string, error) { return path, nil }
+	resolveExec = func(name string) (string, error) { return "/usr/bin/" + name, nil }
 
 	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app, Options{Apply: true, Targets: []string{"apt:vim"}})
@@ -215,9 +218,11 @@ func TestRunApplyExecutesAptTarget(t *testing.T) {
 func TestRunApplySkipsRootRequiredTargetWhenNotRoot(t *testing.T) {
 	savedRun := runCmd
 	savedUID := getEUID
+	savedResolveExec := resolveExec
 	defer func() {
 		runCmd = savedRun
 		getEUID = savedUID
+		resolveExec = savedResolveExec
 	}()
 
 	runCalled := false
@@ -226,6 +231,7 @@ func TestRunApplySkipsRootRequiredTargetWhenNotRoot(t *testing.T) {
 		return nil
 	}
 	getEUID = func() int { return 1000 }
+	resolveExec = func(name string) (string, error) { return "/usr/bin/" + name, nil }
 
 	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app, Options{Apply: true, Targets: []string{"snap:code"}})
@@ -280,17 +286,20 @@ func TestRunApplyTargetCommandFailureSetsError(t *testing.T) {
 	savedUID := getEUID
 	savedLookPath := lookPath
 	savedAbsPath := absPath
+	savedResolveExec := resolveExec
 	defer func() {
 		runCmd = savedRun
 		getEUID = savedUID
 		lookPath = savedLookPath
 		absPath = savedAbsPath
+		resolveExec = savedResolveExec
 	}()
 
 	runCmd = func(ctx context.Context, name string, args ...string) error { return errors.New("failed") }
 	getEUID = func() int { return 0 }
 	lookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
 	absPath = func(path string) (string, error) { return path, nil }
+	resolveExec = func(name string) (string, error) { return "/usr/bin/" + name, nil }
 
 	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app, Options{Apply: true, Targets: []string{"zypper:foo"}})
@@ -353,5 +362,79 @@ func TestResolveTrustedExecutableRejectsUntrustedPath(t *testing.T) {
 	_, err := resolveTrustedExecutable("apt-get")
 	if err == nil {
 		t.Fatal("expected untrusted path error")
+	}
+}
+
+func TestRunPlanMarksUnavailableUninstallTargetSkipped(t *testing.T) {
+	savedResolveExec := resolveExec
+	defer func() { resolveExec = savedResolveExec }()
+
+	resolveExec = func(name string) (string, error) {
+		if name == "dnf" {
+			return "", errors.New("not found")
+		}
+		return "/usr/bin/" + name, nil
+	}
+
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: true}, Logger: logging.NewNoopLogger()}
+	res, err := NewService().Run(context.Background(), app, Options{Targets: []string{"dnf:vim"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, item := range res.Items {
+		if item.RuleID == "uninstall.pkg.dnf" {
+			found = true
+			if item.Selected {
+				t.Fatalf("expected unavailable backend target to be unselected")
+			}
+			if item.Result != "skipped" {
+				t.Fatalf("expected unavailable backend target skipped, got %s", item.Result)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected uninstall.pkg.dnf item")
+	}
+
+	if res.Summary.ItemsSelected != len(res.Items)-1 {
+		t.Fatalf("expected selected items to exclude unavailable target, got %d selected out of %d", res.Summary.ItemsSelected, len(res.Items))
+	}
+}
+
+func TestRunApplySkipsUnavailableBackendTarget(t *testing.T) {
+	savedRun := runCmd
+	savedResolveExec := resolveExec
+	defer func() {
+		runCmd = savedRun
+		resolveExec = savedResolveExec
+	}()
+
+	runCalled := false
+	runCmd = func(ctx context.Context, name string, args ...string) error {
+		runCalled = true
+		return nil
+	}
+	resolveExec = func(name string) (string, error) {
+		if name == "zypper" {
+			return "", errors.New("not found")
+		}
+		return "/usr/bin/" + name, nil
+	}
+
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Logger: logging.NewNoopLogger()}
+	res, err := NewService().Run(context.Background(), app, Options{Apply: true, Targets: []string{"zypper:foo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runCalled {
+		t.Fatalf("did not expect command execution when backend executable is unavailable")
+	}
+
+	for _, item := range res.Items {
+		if item.RuleID == "uninstall.pkg.zypper" && item.Result != "skipped" {
+			t.Fatalf("expected unavailable backend target skipped, got %s", item.Result)
+		}
 	}
 }
