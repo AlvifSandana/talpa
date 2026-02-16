@@ -163,6 +163,7 @@ func optimizeAdapters() []optimizeAdapter {
 		{ID: "optimize-apt", RuleID: "optimize.apt.clean", Name: "apt", Command: []string{"apt-get", "clean"}},
 		{ID: "optimize-dnf", RuleID: "optimize.dnf.clean", Name: "dnf", Command: []string{"dnf", "clean", "all"}},
 		{ID: "optimize-pacman", RuleID: "optimize.pacman.clean", Name: "pacman", Command: []string{"pacman", "-Scc", "--noconfirm"}},
+		{ID: "optimize-zypper", RuleID: "optimize.zypper.clean", Name: "zypper", Command: []string{"zypper", "clean", "--all"}},
 	}
 }
 
@@ -324,6 +325,9 @@ func isPackageManagerProcessNameFor(manager, name string) bool {
 		},
 		"pacman": {
 			"pacman": {},
+		},
+		"zypper": {
+			"zypper": {},
 		},
 	}
 

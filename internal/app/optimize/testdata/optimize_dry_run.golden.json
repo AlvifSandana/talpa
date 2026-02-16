@@ -1,0 +1,63 @@
+{
+  "schema_version": "1.0",
+  "command": "optimize",
+  "timestamp": "2000-01-01T00:00:00Z",
+  "duration_ms": 0,
+  "dry_run": true,
+  "summary": {
+    "items_total": 4,
+    "items_selected": 2,
+    "estimated_freed_bytes": 0,
+    "errors": 0
+  },
+  "items": [
+    {
+      "id": "optimize-apt",
+      "rule_id": "optimize.apt.clean",
+      "path": "/usr/bin/apt-get",
+      "size_bytes": 0,
+      "last_modified": "2000-01-01T00:00:00Z",
+      "category": "optimization",
+      "risk": "medium",
+      "selected": true,
+      "requires_root": true,
+      "result": "planned"
+    },
+    {
+      "id": "optimize-dnf",
+      "rule_id": "optimize.dnf.clean",
+      "path": "dnf",
+      "size_bytes": 0,
+      "last_modified": "2000-01-01T00:00:00Z",
+      "category": "optimization",
+      "risk": "medium",
+      "selected": false,
+      "requires_root": true,
+      "result": "skipped"
+    },
+    {
+      "id": "optimize-pacman",
+      "rule_id": "optimize.pacman.clean",
+      "path": "/usr/bin/pacman",
+      "size_bytes": 0,
+      "last_modified": "2000-01-01T00:00:00Z",
+      "category": "optimization",
+      "risk": "medium",
+      "selected": true,
+      "requires_root": true,
+      "result": "planned"
+    },
+    {
+      "id": "optimize-zypper",
+      "rule_id": "optimize.zypper.clean",
+      "path": "zypper",
+      "size_bytes": 0,
+      "last_modified": "2000-01-01T00:00:00Z",
+      "category": "optimization",
+      "risk": "medium",
+      "selected": false,
+      "requires_root": true,
+      "result": "skipped"
+    }
+  ]
+}

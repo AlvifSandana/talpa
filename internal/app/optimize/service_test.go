@@ -171,8 +171,8 @@ func TestRunPlanMarksUnavailableAdapterSkipped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Summary.ItemsSelected != 2 {
-		t.Fatalf("expected 2 selected adapters, got %d", res.Summary.ItemsSelected)
+	if res.Summary.ItemsSelected != 3 {
+		t.Fatalf("expected 3 selected adapters, got %d", res.Summary.ItemsSelected)
 	}
 	for _, it := range res.Items {
 		if it.RuleID == "optimize.dnf.clean" {
@@ -289,6 +289,7 @@ func TestIsPackageManagerProcessNameFor(t *testing.T) {
 		{name: "apt helper not allowed", mgr: "apt", in: "apt.systemd.daily", want: false},
 		{name: "dnf helper not allowed", mgr: "dnf", in: "dnf-automatic", want: false},
 		{name: "dnf binary", mgr: "dnf", in: "dnf", want: true},
+		{name: "zypper", mgr: "zypper", in: "zypper", want: true},
 		{name: "unrelated", mgr: "pacman", in: "bash", want: false},
 		{name: "empty", mgr: "apt", in: "", want: false},
 	}
