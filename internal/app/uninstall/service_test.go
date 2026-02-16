@@ -5,7 +5,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+	"time"
 
 	"talpa/internal/app/common"
 	"talpa/internal/infra/logging"
@@ -156,5 +158,200 @@ func TestRunApplySkipsOnValidationFailure(t *testing.T) {
 	}
 	if res.Items[0].Result != "skipped" {
 		t.Fatalf("expected validation failure to skip item, got %s", res.Items[0].Result)
+	}
+}
+
+func TestRunApplyExecutesAptTarget(t *testing.T) {
+	savedRun := runCmd
+	savedUID := getEUID
+	savedLookPath := lookPath
+	savedAbsPath := absPath
+	defer func() {
+		runCmd = savedRun
+		getEUID = savedUID
+		lookPath = savedLookPath
+		absPath = savedAbsPath
+	}()
+
+	called := false
+	runCmd = func(ctx context.Context, name string, args ...string) error {
+		called = true
+		if name != "/usr/bin/apt-get" {
+			t.Fatalf("expected /usr/bin/apt-get command, got %s", name)
+		}
+		wantArgs := []string{"remove", "-y", "--", "vim"}
+		if !reflect.DeepEqual(args, wantArgs) {
+			t.Fatalf("unexpected apt args: got %#v want %#v", args, wantArgs)
+		}
+		return nil
+	}
+	getEUID = func() int { return 0 }
+	lookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
+	absPath = func(path string) (string, error) { return path, nil }
+
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Logger: logging.NewNoopLogger()}
+	res, err := NewService().Run(context.Background(), app, Options{Apply: true, Targets: []string{"apt:vim"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatalf("expected package uninstall command execution")
+	}
+
+	found := false
+	for _, item := range res.Items {
+		if item.RuleID == "uninstall.pkg.apt" {
+			found = true
+			if item.Result != "uninstalled" {
+				t.Fatalf("expected apt target uninstalled, got %s", item.Result)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected uninstall.pkg.apt item")
+	}
+}
+
+func TestRunApplySkipsRootRequiredTargetWhenNotRoot(t *testing.T) {
+	savedRun := runCmd
+	savedUID := getEUID
+	defer func() {
+		runCmd = savedRun
+		getEUID = savedUID
+	}()
+
+	runCalled := false
+	runCmd = func(ctx context.Context, name string, args ...string) error {
+		runCalled = true
+		return nil
+	}
+	getEUID = func() int { return 1000 }
+
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Logger: logging.NewNoopLogger()}
+	res, err := NewService().Run(context.Background(), app, Options{Apply: true, Targets: []string{"snap:code"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runCalled {
+		t.Fatalf("did not expect command execution without root")
+	}
+	for _, item := range res.Items {
+		if item.RuleID == "uninstall.pkg.snap" && item.Result != "skipped" {
+			t.Fatalf("expected snap target skipped, got %s", item.Result)
+		}
+	}
+}
+
+func TestRunRejectsInvalidTarget(t *testing.T) {
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: true}, Logger: logging.NewNoopLogger()}
+	_, err := NewService().Run(context.Background(), app, Options{Targets: []string{"invalid-format"}})
+	if err == nil {
+		t.Fatal("expected invalid target parsing error")
+	}
+}
+
+func TestRunRejectsOptionLikeTargetName(t *testing.T) {
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: true}, Logger: logging.NewNoopLogger()}
+	_, err := NewService().Run(context.Background(), app, Options{Targets: []string{"apt:--purge"}})
+	if err == nil {
+		t.Fatal("expected invalid target name error")
+	}
+}
+
+func TestRunRejectsInjectedTargetPayloads(t *testing.T) {
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: true}, Logger: logging.NewNoopLogger()}
+	payloads := []string{
+		"apt:vim test",
+		"apt:vim\ttest",
+		"apt:vim;rm",
+		"apt:$(id)",
+		"unknown:pkg",
+	}
+	for _, payload := range payloads {
+		_, err := NewService().Run(context.Background(), app, Options{Targets: []string{payload}})
+		if err == nil {
+			t.Fatalf("expected parse failure for payload %q", payload)
+		}
+	}
+}
+
+func TestRunApplyTargetCommandFailureSetsError(t *testing.T) {
+	savedRun := runCmd
+	savedUID := getEUID
+	savedLookPath := lookPath
+	savedAbsPath := absPath
+	defer func() {
+		runCmd = savedRun
+		getEUID = savedUID
+		lookPath = savedLookPath
+		absPath = savedAbsPath
+	}()
+
+	runCmd = func(ctx context.Context, name string, args ...string) error { return errors.New("failed") }
+	getEUID = func() int { return 0 }
+	lookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
+	absPath = func(path string) (string, error) { return path, nil }
+
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Logger: logging.NewNoopLogger()}
+	res, err := NewService().Run(context.Background(), app, Options{Apply: true, Targets: []string{"zypper:foo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, item := range res.Items {
+		if item.RuleID == "uninstall.pkg.zypper" {
+			found = true
+			if item.Result != "error" {
+				t.Fatalf("expected zypper target error, got %s", item.Result)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected uninstall.pkg.zypper item")
+	}
+}
+
+func TestWithDefaultTimeoutSetsDeadlineWhenMissing(t *testing.T) {
+	ctx, cancel := withDefaultTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if _, ok := ctx.Deadline(); !ok {
+		t.Fatal("expected deadline to be set")
+	}
+}
+
+func TestWithDefaultTimeoutKeepsExistingDeadline(t *testing.T) {
+	base, baseCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer baseCancel()
+
+	ctx, cancel := withDefaultTimeout(base, time.Minute)
+	defer cancel()
+
+	baseDeadline, ok := base.Deadline()
+	if !ok {
+		t.Fatal("expected base deadline")
+	}
+	ctxDeadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("expected ctx deadline")
+	}
+	if !ctxDeadline.Equal(baseDeadline) {
+		t.Fatalf("expected existing deadline to be preserved")
+	}
+}
+
+func TestResolveTrustedExecutableRejectsUntrustedPath(t *testing.T) {
+	savedLookPath := lookPath
+	savedAbsPath := absPath
+	defer func() {
+		lookPath = savedLookPath
+		absPath = savedAbsPath
+	}()
+
+	lookPath = func(file string) (string, error) { return "/tmp/fake-" + file, nil }
+	absPath = func(path string) (string, error) { return path, nil }
+
+	_, err := resolveTrustedExecutable("apt-get")
+	if err == nil {
+		t.Fatal("expected untrusted path error")
 	}
 }

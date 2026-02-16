@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -17,13 +18,29 @@ import (
 type Service struct{}
 
 type Options struct {
-	Apply bool
+	Apply   bool
+	Targets []string
+}
+
+type uninstallAdapter struct {
+	Backend      string
+	RequiresRoot bool
+	BuildCommand func(name string) []string
+}
+
+type uninstallTarget struct {
+	Backend string
+	Name    string
 }
 
 var (
 	osUserHomeDir      = os.UserHomeDir
 	osExecutable       = os.Executable
 	osStat             = os.Stat
+	lookPath           = exec.LookPath
+	absPath            = filepath.Abs
+	runCmd             = runCommand
+	getEUID            = os.Geteuid
 	safeDelete         = safety.SafeDelete
 	pathValidateSystem = common.ValidateSystemScopePath
 )
@@ -37,8 +54,13 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 	}
 	exe, exeErr := osExecutable()
 	binaryTargets := uninstallBinaryTargets(home, exe, exeErr)
+	adapters := uninstallAdapters()
+	targets, err := parseUninstallTargets(opts.Targets)
+	if err != nil {
+		return model.CommandResult{}, err
+	}
 
-	items := make([]model.CandidateItem, 0, len(binaryTargets)+2)
+	items := make([]model.CandidateItem, 0, len(binaryTargets)+2+len(targets))
 	for i, target := range binaryTargets {
 		id := fmt.Sprintf("uninstall-%d", i+1)
 		ruleID := "uninstall.binary"
@@ -51,6 +73,23 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 		newPlanItem("uninstall-3", "uninstall.config", filepath.Join(home, ".config", "talpa"), "config", model.RiskMedium),
 		newPlanItem("uninstall-4", "uninstall.cache", filepath.Join(home, ".cache", "talpa"), "cache", model.RiskLow),
 	)
+	for i, t := range targets {
+		adapter, ok := adapterForBackend(t.Backend, adapters)
+		if !ok {
+			continue
+		}
+		items = append(items, model.CandidateItem{
+			ID:           fmt.Sprintf("uninstall-target-%d", i+1),
+			RuleID:       fmt.Sprintf("uninstall.pkg.%s", t.Backend),
+			Path:         fmt.Sprintf("%s:%s", t.Backend, t.Name),
+			Category:     "package",
+			Risk:         model.RiskHigh,
+			Selected:     true,
+			RequiresRoot: adapter.RequiresRoot,
+			LastModified: time.Now().UTC(),
+			Result:       "planned",
+		})
+	}
 
 	errCount := 0
 	if opts.Apply {
@@ -59,6 +98,87 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 		}
 		if !app.Options.DryRun {
 			for i := range items {
+				if strings.HasPrefix(items[i].RuleID, "uninstall.pkg.") {
+					entry := model.OperationLogEntry{
+						Timestamp: time.Now().UTC(),
+						PlanID:    "plan-uninstall",
+						Command:   "uninstall",
+						Action:    "exec",
+						Path:      items[i].Path,
+						RuleID:    items[i].RuleID,
+						Category:  items[i].Category,
+						Risk:      string(items[i].Risk),
+						DryRun:    false,
+					}
+
+					target, err := parseUninstallTarget(items[i].Path)
+					if err != nil {
+						items[i].Result = "error"
+						errCount++
+						entry.Result = items[i].Result
+						entry.Error = err.Error()
+						if err := app.Logger.Log(ctx, entry); err != nil {
+							errCount++
+						}
+						continue
+					}
+					adapter, ok := adapterForBackend(target.Backend, adapters)
+					if !ok {
+						items[i].Result = "error"
+						errCount++
+						entry.Result = items[i].Result
+						entry.Error = "unsupported uninstall backend"
+						if err := app.Logger.Log(ctx, entry); err != nil {
+							errCount++
+						}
+						continue
+					}
+					if adapter.RequiresRoot && getEUID() != 0 {
+						items[i].Result = "skipped"
+						entry.Result = items[i].Result
+						entry.Error = "requires root"
+						if err := app.Logger.Log(ctx, entry); err != nil {
+							errCount++
+						}
+						continue
+					}
+					cmd := adapter.BuildCommand(target.Name)
+					if len(cmd) == 0 {
+						items[i].Result = "error"
+						errCount++
+						entry.Result = items[i].Result
+						entry.Error = "invalid uninstall command"
+						if err := app.Logger.Log(ctx, entry); err != nil {
+							errCount++
+						}
+						continue
+					}
+					resolved, err := resolveTrustedExecutable(cmd[0])
+					if err != nil {
+						items[i].Result = "error"
+						errCount++
+						entry.Result = items[i].Result
+						entry.Error = err.Error()
+						if err := app.Logger.Log(ctx, entry); err != nil {
+							errCount++
+						}
+						continue
+					}
+					cmd[0] = resolved
+					if err := runCmd(ctx, cmd[0], cmd[1:]...); err != nil {
+						items[i].Result = "error"
+						errCount++
+						entry.Error = err.Error()
+					} else {
+						items[i].Result = "uninstalled"
+					}
+					entry.Result = items[i].Result
+					if err := app.Logger.Log(ctx, entry); err != nil {
+						errCount++
+					}
+					continue
+				}
+
 				entry := model.OperationLogEntry{
 					Timestamp: time.Now().UTC(),
 					PlanID:    "plan-uninstall",
@@ -155,6 +275,140 @@ func trustedExecutablePath(executable string, canonical []string) (bool, string)
 		}
 	}
 	return false, ""
+}
+
+func uninstallAdapters() []uninstallAdapter {
+	return []uninstallAdapter{
+		{Backend: "apt", RequiresRoot: true, BuildCommand: func(name string) []string { return []string{"apt-get", "remove", "-y", "--", name} }},
+		{Backend: "dnf", RequiresRoot: true, BuildCommand: func(name string) []string { return []string{"dnf", "remove", "-y", "--", name} }},
+		{Backend: "pacman", RequiresRoot: true, BuildCommand: func(name string) []string { return []string{"pacman", "-Rns", "--noconfirm", "--", name} }},
+		{Backend: "zypper", RequiresRoot: true, BuildCommand: func(name string) []string { return []string{"zypper", "remove", "-y", "--", name} }},
+		{Backend: "snap", RequiresRoot: true, BuildCommand: func(name string) []string { return []string{"snap", "remove", "--purge", "--", name} }},
+		{Backend: "flatpak", RequiresRoot: false, BuildCommand: func(name string) []string { return []string{"flatpak", "uninstall", "--delete-data", "-y", "--", name} }},
+	}
+}
+
+func adapterForBackend(backend string, adapters []uninstallAdapter) (uninstallAdapter, bool) {
+	for _, a := range adapters {
+		if a.Backend == backend {
+			return a, true
+		}
+	}
+	return uninstallAdapter{}, false
+}
+
+func parseUninstallTargets(raw []string) ([]uninstallTarget, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	out := make([]uninstallTarget, 0, len(raw))
+	for _, v := range raw {
+		t, err := parseUninstallTarget(v)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, nil
+}
+
+func parseUninstallTarget(v string) (uninstallTarget, error) {
+	parts := strings.SplitN(strings.TrimSpace(v), ":", 2)
+	if len(parts) != 2 {
+		return uninstallTarget{}, fmt.Errorf("invalid target %q: expected backend:name", v)
+	}
+	backend := strings.ToLower(strings.TrimSpace(parts[0]))
+	name := strings.TrimSpace(parts[1])
+	if backend == "" || name == "" {
+		return uninstallTarget{}, fmt.Errorf("invalid target %q: backend and name are required", v)
+	}
+	if strings.HasPrefix(name, "-") {
+		return uninstallTarget{}, fmt.Errorf("invalid target %q: package name must not start with '-'", v)
+	}
+	if !isValidTargetName(name) {
+		return uninstallTarget{}, fmt.Errorf("invalid target %q: unsupported package name characters", v)
+	}
+	allowed := map[string]struct{}{
+		"apt":     {},
+		"dnf":     {},
+		"pacman":  {},
+		"zypper":  {},
+		"snap":    {},
+		"flatpak": {},
+	}
+	if _, ok := allowed[backend]; !ok {
+		return uninstallTarget{}, fmt.Errorf("invalid backend %q: supported backends are apt,dnf,pacman,zypper,snap,flatpak", backend)
+	}
+	return uninstallTarget{Backend: backend, Name: name}, nil
+}
+
+func runCommand(ctx context.Context, name string, args ...string) error {
+	cmdCtx, cancel := withDefaultTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(cmdCtx, name, args...)
+	return cmd.Run()
+}
+
+func withDefaultTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
+func resolveTrustedExecutable(name string) (string, error) {
+	resolved, err := lookPath(name)
+	if err != nil {
+		return "", err
+	}
+	abs, err := absPath(resolved)
+	if err != nil {
+		return "", err
+	}
+	if !isTrustedExecutablePath(abs) {
+		return "", fmt.Errorf("untrusted executable path: %s", abs)
+	}
+	return abs, nil
+}
+
+func isTrustedExecutablePath(path string) bool {
+	n := filepath.Clean(path)
+	trustedPrefixes := []string{
+		"/usr/bin/",
+		"/usr/sbin/",
+		"/bin/",
+		"/sbin/",
+		"/usr/local/bin/",
+		"/usr/local/sbin/",
+		"/snap/bin/",
+	}
+	for _, p := range trustedPrefixes {
+		if strings.HasPrefix(n, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func isValidTargetName(name string) bool {
+	for _, r := range name {
+		if r <= 31 || r == 127 {
+			return false
+		}
+		if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
+			return false
+		}
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			continue
+		}
+		switch r {
+		case '.', '_', '+', ':', '@', '/', '-', '~', '=':
+			continue
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func newPlanItem(id, ruleID, path, category string, risk model.RiskLevel) model.CandidateItem {

@@ -8,6 +8,7 @@ import (
 )
 
 var uninstallApply bool
+var uninstallTargets []string
 
 var uninstallCmd = &cobra.Command{
 	Use:   "uninstall",
@@ -18,7 +19,7 @@ var uninstallCmd = &cobra.Command{
 			return err
 		}
 		svc := uninstall.NewService()
-		result, err := svc.Run(cmd.Context(), app, uninstall.Options{Apply: uninstallApply})
+		result, err := svc.Run(cmd.Context(), app, uninstall.Options{Apply: uninstallApply, Targets: uninstallTargets})
 		if err != nil {
 			return err
 		}
@@ -28,4 +29,5 @@ var uninstallCmd = &cobra.Command{
 
 func init() {
 	uninstallCmd.Flags().BoolVar(&uninstallApply, "apply", false, "Execute uninstall actions (requires --yes or --dry-run)")
+	uninstallCmd.Flags().StringSliceVar(&uninstallTargets, "target", nil, "Explicit uninstall target in backend:name format (backend: apt|dnf|pacman|zypper|snap|flatpak)")
 }
