@@ -6,6 +6,13 @@ on:
       - main
   pull_request:
 
+env:
+  CI_LOG_DIR: .ci-logs
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -18,20 +25,31 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Prepare CI log directory
+        run: mkdir -p "$CI_LOG_DIR"
+
       - name: Run tests
-        run: go test ./...
+        run: set -o pipefail && go test ./... 2>&1 | tee "$CI_LOG_DIR/go-test.log"
 
       - name: Run vet
-        run: go vet ./...
+        run: set -o pipefail && go vet ./... 2>&1 | tee "$CI_LOG_DIR/go-vet.log"
 
       - name: Run race tests
-        run: go test -race ./...
+        run: set -o pipefail && go test -race ./... 2>&1 | tee "$CI_LOG_DIR/go-test-race.log"
 
       - name: Run CLI JSON smoke checks
-        run: bash scripts/ci/smoke_json.sh
+        run: set -o pipefail && bash scripts/ci/smoke_json.sh 2>&1 | tee "$CI_LOG_DIR/smoke-json.log"
 
       - name: Run CLI negative smoke checks
-        run: bash scripts/ci/smoke_negative.sh
+        run: set -o pipefail && bash scripts/ci/smoke_negative.sh 2>&1 | tee "$CI_LOG_DIR/smoke-negative.log"
+
+      - name: Upload test job logs on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs-test
+          path: ${{ env.CI_LOG_DIR }}/
+          if-no-files-found: ignore
 
   distro-best-effort:
     needs: test
@@ -49,8 +67,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Prepare distro CI log directory
+        run: mkdir -p "$CI_LOG_DIR"
+
       - name: Run tests in ${{ matrix.distro }} container
         run: |
+          set -o pipefail
           docker run --rm \
             -v "$PWD":/workspace \
             -w /workspace \
@@ -63,4 +85,12 @@ jobs:
                 pacman -Syu --noconfirm --needed go python
               fi
               go test ./...
-            '
+            ' 2>&1 | tee "$CI_LOG_DIR/distro-${{ matrix.distro }}.log"
+
+      - name: Upload distro job logs on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs-distro-${{ matrix.distro }}
+          path: ${{ env.CI_LOG_DIR }}/
+          if-no-files-found: ignore
