@@ -29,3 +29,38 @@ jobs:
 
       - name: Run CLI JSON smoke checks
         run: bash scripts/ci/smoke_json.sh
+
+      - name: Run CLI negative smoke checks
+        run: bash scripts/ci/smoke_negative.sh
+
+  distro-best-effort:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: fedora
+            image: fedora:41
+          - distro: arch
+            image: archlinux:latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run tests in ${{ matrix.distro }} container
+        run: |
+          docker run --rm \
+            -v "$PWD":/workspace \
+            -w /workspace \
+            "${{ matrix.image }}" \
+            bash -lc '
+              set -euo pipefail
+              if command -v dnf >/dev/null 2>&1; then
+                dnf install -y golang python3
+              elif command -v pacman >/dev/null 2>&1; then
+                pacman -Syu --noconfirm --needed go python
+              fi
+              go test ./...
+            '

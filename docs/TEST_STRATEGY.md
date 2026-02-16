@@ -34,16 +34,17 @@
 ## CI Matrix
 ### Tier-1 (required)
 - Ubuntu latest
-- Fedora latest
-- Arch latest
 
 ### Tier-2 (best effort)
+- Fedora latest
+- Arch latest
 - Debian stable
 - openSUSE Leap/Tumbleweed
 
 ## CI Pipeline Outline
-1. Lint
-2. Unit tests
-3. Integration tests (fixtures)
-4. Golden JSON verification
-5. Smoke tests for CLI commands
+1. Unit tests (`go test ./...`)
+2. Static analysis (`go vet ./...`)
+3. Concurrency checks (`go test -race ./...`)
+4. CLI JSON smoke checks (all core commands in dry-run-safe mode)
+5. CLI negative smoke checks (invalid flags/inputs fail with expected errors)
+6. Cross-distro best-effort test run (Fedora, Arch)
