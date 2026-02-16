@@ -10,6 +10,7 @@ import (
 
 	"talpa/internal/app/common"
 	"talpa/internal/domain/model"
+	"talpa/internal/domain/rules"
 	"talpa/internal/domain/safety"
 )
 
@@ -23,16 +24,10 @@ func (Service) Run(ctx context.Context, app *common.AppContext, paths []string) 
 		paths = defaultPaths()
 	}
 
-	artifactNames := map[string]struct{}{
-		"node_modules":  {},
-		".next":         {},
-		"dist":          {},
-		"build":         {},
-		"target":        {},
-		".venv":         {},
-		"venv":          {},
-		"__pycache__":   {},
-		".pytest_cache": {},
+	ruleSet := rules.PurgeArtifactRules()
+	ruleByName := make(map[string]model.Rule, len(ruleSet))
+	for _, r := range ruleSet {
+		ruleByName[r.Pattern] = r
 	}
 
 	home, _ := os.UserHomeDir()
@@ -48,7 +43,8 @@ func (Service) Run(ctx context.Context, app *common.AppContext, paths []string) 
 			}
 
 			name := d.Name()
-			if _, ok := artifactNames[name]; !ok {
+			rule, ok := ruleByName[name]
+			if !ok {
 				return nil
 			}
 
@@ -56,14 +52,14 @@ func (Service) Run(ctx context.Context, app *common.AppContext, paths []string) 
 			recent := isRecent(path, 7)
 			item := model.CandidateItem{
 				ID:           "purge-" + sanitizeID(path),
-				RuleID:       "purge.artifact",
+				RuleID:       rule.ID,
 				Path:         path,
 				SizeBytes:    size,
 				LastModified: time.Now().UTC(),
-				Category:     "project_artifact",
-				Risk:         model.RiskLow,
+				Category:     rule.Category,
+				Risk:         rule.Risk,
 				Selected:     !recent,
-				RequiresRoot: false,
+				RequiresRoot: rule.RequiresRoot,
 				Result:       "planned",
 			}
 

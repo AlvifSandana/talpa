@@ -7,11 +7,13 @@ type contextKey string
 const ContextKeyApp contextKey = "appctx"
 
 type GlobalOptions struct {
-	DryRun  bool
-	Debug   bool
-	Yes     bool
-	JSON    bool
-	NoOpLog bool
+	DryRun         bool
+	Debug          bool
+	Yes            bool
+	JSON           bool
+	NoOpLog        bool
+	StatusTop      int
+	StatusInterval int
 }
 
 type AppContext struct {

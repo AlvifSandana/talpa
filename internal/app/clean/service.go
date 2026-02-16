@@ -10,6 +10,7 @@ import (
 
 	"talpa/internal/app/common"
 	"talpa/internal/domain/model"
+	"talpa/internal/domain/rules"
 	"talpa/internal/domain/safety"
 )
 
@@ -24,29 +25,26 @@ func (Service) Run(ctx context.Context, app *common.AppContext) (model.CommandRe
 		return model.CommandResult{}, err
 	}
 
-	candidates := []string{
-		filepath.Join(home, ".cache"),
-		filepath.Join(home, ".local", "share", "Trash"),
-		filepath.Join(home, ".cache", "thumbnails"),
-	}
+	ruleSet := rules.ExistingCleanRules(home)
 
-	items := make([]model.CandidateItem, 0, len(candidates))
+	items := make([]model.CandidateItem, 0, len(ruleSet))
 	selected := 0
 	var estimate int64
 	errCount := 0
 
-	for i, p := range candidates {
+	for i, rule := range ruleSet {
+		p := rule.Pattern
 		size := dirSize(p)
 		item := model.CandidateItem{
 			ID:           "clean-" + strconv.Itoa(i+1),
-			RuleID:       "clean.default",
+			RuleID:       rule.ID,
 			Path:         p,
 			SizeBytes:    size,
 			LastModified: time.Now().UTC(),
-			Category:     "cache",
-			Risk:         model.RiskLow,
+			Category:     rule.Category,
+			Risk:         rule.Risk,
 			Selected:     true,
-			RequiresRoot: false,
+			RequiresRoot: rule.RequiresRoot,
 			Result:       "planned",
 		}
 

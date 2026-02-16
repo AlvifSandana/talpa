@@ -11,6 +11,7 @@ import (
 
 	"talpa/internal/app/common"
 	"talpa/internal/domain/model"
+	"talpa/internal/infra/system"
 )
 
 type Service struct{}
@@ -21,6 +22,14 @@ type Metrics struct {
 	MemoryUsedBytes uint64       `json:"memory_used_bytes"`
 	DiskUsage       []DiskMetric `json:"disk_usage"`
 	Net             NetMetric    `json:"net"`
+	TopProcesses    []Process    `json:"top_processes"`
+}
+
+type Process struct {
+	PID        int     `json:"pid"`
+	Command    string  `json:"command"`
+	CPUPercent float64 `json:"cpu_percent"`
+	MemBytes   uint64  `json:"mem_bytes"`
 }
 
 type DiskMetric struct {
@@ -38,7 +47,6 @@ func NewService() Service { return Service{} }
 
 func (Service) Run(ctx context.Context, app *common.AppContext) (model.CommandResult, error) {
 	_ = ctx
-	_ = app
 	start := time.Now()
 
 	load := readLoadAvg()
@@ -46,12 +54,19 @@ func (Service) Run(ctx context.Context, app *common.AppContext) (model.CommandRe
 	disk := readDiskUsage("/")
 	net := readNetDev()
 
+	top := system.TopProcesses(app.Options.StatusTop)
+	procs := make([]Process, 0, len(top))
+	for _, p := range top {
+		procs = append(procs, Process{PID: p.PID, Command: p.Command, CPUPercent: p.CPUPercent, MemBytes: p.MemBytes})
+	}
+
 	metrics := Metrics{
 		CPUUsage:        readCPUUsage(),
 		LoadAvg:         load,
 		MemoryUsedBytes: mem,
 		DiskUsage:       []DiskMetric{disk},
 		Net:             net,
+		TopProcesses:    procs,
 	}
 
 	return model.CommandResult{

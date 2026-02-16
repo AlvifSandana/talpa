@@ -7,6 +7,9 @@ import (
 	"talpa/internal/app/common"
 )
 
+var analyzeDepth int
+var analyzeLimit int
+
 var analyzeCmd = &cobra.Command{
 	Use:   "analyze [path]",
 	Short: "Analyze disk usage under a path",
@@ -23,10 +26,15 @@ var analyzeCmd = &cobra.Command{
 		}
 
 		svc := analyze.NewService()
-		result, err := svc.Run(cmd.Context(), app, root)
+		result, err := svc.Run(cmd.Context(), app, root, analyzeDepth, analyzeLimit)
 		if err != nil {
 			return err
 		}
 		return printResult(result)
 	},
+}
+
+func init() {
+	analyzeCmd.Flags().IntVar(&analyzeDepth, "depth", 4, "Maximum scan depth")
+	analyzeCmd.Flags().IntVar(&analyzeLimit, "limit", 50, "Maximum number of nodes")
 }

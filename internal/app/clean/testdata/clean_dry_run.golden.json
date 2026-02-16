@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0",
+  "command": "clean",
+  "timestamp": "2000-01-01T00:00:00Z",
+  "duration_ms": 0,
+  "dry_run": true,
+  "summary": {
+    "items_total": 3,
+    "items_selected": 3,
+    "estimated_freed_bytes": 3,
+    "errors": 0
+  },
+  "items": [
+    {
+      "id": "clean-1",
+      "rule_id": "clean.xdg.cache",
+      "path": "$HOME/.cache",
+      "size_bytes": 2,
+      "last_modified": "2000-01-01T00:00:00Z",
+      "category": "xdg_cache",
+      "risk": "low",
+      "selected": true,
+      "requires_root": false,
+      "result": "planned"
+    },
+    {
+      "id": "clean-2",
+      "rule_id": "clean.trash",
+      "path": "$HOME/.local/share/Trash",
+      "size_bytes": 1,
+      "last_modified": "2000-01-01T00:00:00Z",
+      "category": "trash",
+      "risk": "low",
+      "selected": true,
+      "requires_root": false,
+      "result": "planned"
+    },
+    {
+      "id": "clean-3",
+      "rule_id": "clean.thumbnails",
+      "path": "$HOME/.cache/thumbnails",
+      "size_bytes": 0,
+      "last_modified": "2000-01-01T00:00:00Z",
+      "category": "thumbnails",
+      "risk": "low",
+      "selected": true,
+      "requires_root": false,
+      "result": "planned"
+    }
+  ]
+}

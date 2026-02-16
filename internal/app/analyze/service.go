@@ -16,7 +16,7 @@ type Service struct{}
 
 func NewService() Service { return Service{} }
 
-func (Service) Run(ctx context.Context, app *common.AppContext, root string) (model.CommandResult, error) {
+func (Service) Run(ctx context.Context, app *common.AppContext, root string, depth int, limit int) (model.CommandResult, error) {
 	_ = ctx
 	start := time.Now()
 	if root == "" {
@@ -27,14 +27,14 @@ func (Service) Run(ctx context.Context, app *common.AppContext, root string) (mo
 		root = h
 	}
 
-	items, err := filesystem.Scan(root, filesystem.ScanOptions{MaxDepth: 4, Excludes: []string{"/proc", "/sys", "/dev", "/run"}})
+	items, err := filesystem.Scan(root, filesystem.ScanOptions{MaxDepth: depth, Excludes: []string{"/proc", "/sys", "/dev", "/run"}})
 	if err != nil {
 		return model.CommandResult{}, err
 	}
 
 	sort.Slice(items, func(i, j int) bool { return items[i].SizeBytes > items[j].SizeBytes })
-	if len(items) > 25 {
-		items = items[:25]
+	if limit > 0 && len(items) > limit {
+		items = items[:limit]
 	}
 
 	out := make([]model.CandidateItem, 0, len(items))
