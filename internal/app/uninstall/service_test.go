@@ -10,8 +10,18 @@ import (
 	"time"
 
 	"talpa/internal/app/common"
+	"talpa/internal/domain/model"
 	"talpa/internal/infra/logging"
 )
+
+type captureUninstallLogger struct {
+	entries []model.OperationLogEntry
+}
+
+func (c *captureUninstallLogger) Log(_ context.Context, entry model.OperationLogEntry) error {
+	c.entries = append(c.entries, entry)
+	return nil
+}
 
 func TestRunApplyRequiresConfirmation(t *testing.T) {
 	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: false}, Logger: logging.NewNoopLogger()}
@@ -539,6 +549,42 @@ func TestRunApplySkipsUnavailableBackendTarget(t *testing.T) {
 	for _, item := range res.Items {
 		if item.RuleID == "uninstall.pkg.zypper" && item.Result != "skipped" {
 			t.Fatalf("expected unavailable backend target skipped, got %s", item.Result)
+		}
+	}
+}
+
+func TestRunApplyLogsUnselectedItemsAsSkipped(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	savedStat := osStat
+	savedResolveExec := resolveExec
+	defer func() {
+		osStat = savedStat
+		resolveExec = savedResolveExec
+	}()
+	osStat = func(name string) (os.FileInfo, error) {
+		return nil, os.ErrNotExist
+	}
+	resolveExec = func(name string) (string, error) {
+		return "", os.ErrNotExist
+	}
+
+	logger := &captureUninstallLogger{}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Logger: logger}
+	_, err := NewService().Run(context.Background(), app, Options{Apply: true, Targets: []string{"apt:vim"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(logger.entries) != 5 {
+		t.Fatalf("expected 5 skip log entries, got %d", len(logger.entries))
+	}
+	for _, e := range logger.entries {
+		if e.Action != "skip" {
+			t.Fatalf("expected skip action, got %s", e.Action)
+		}
+		if e.Result != "skipped" {
+			t.Fatalf("expected skipped result, got %s", e.Result)
 		}
 	}
 }

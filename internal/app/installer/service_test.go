@@ -8,8 +8,18 @@ import (
 	"testing"
 
 	"talpa/internal/app/common"
+	"talpa/internal/domain/model"
 	"talpa/internal/infra/logging"
 )
+
+type captureInstallerLogger struct {
+	entries []model.OperationLogEntry
+}
+
+func (c *captureInstallerLogger) Log(_ context.Context, entry model.OperationLogEntry) error {
+	c.entries = append(c.entries, entry)
+	return nil
+}
 
 func TestRunApplyRequiresConfirmation(t *testing.T) {
 	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: false}, Logger: logging.NewNoopLogger()}
@@ -164,5 +174,34 @@ func TestRunApplySkipsOnValidationFailure(t *testing.T) {
 	}
 	if res.Items[0].Result != "skipped" {
 		t.Fatalf("expected validation failure to skip item, got %s", res.Items[0].Result)
+	}
+}
+
+func TestRunApplyLogsUnselectedItemsAsSkipped(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	savedStat := osStat
+	defer func() { osStat = savedStat }()
+	osStat = func(name string) (os.FileInfo, error) {
+		return nil, os.ErrNotExist
+	}
+
+	logger := &captureInstallerLogger{}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Logger: logger}
+	_, err := NewService().Run(context.Background(), app, Options{Apply: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(logger.entries) != 3 {
+		t.Fatalf("expected 3 skip log entries, got %d", len(logger.entries))
+	}
+	for _, e := range logger.entries {
+		if e.Action != "skip" {
+			t.Fatalf("expected skip action, got %s", e.Action)
+		}
+		if e.Result != "skipped" {
+			t.Fatalf("expected skipped result, got %s", e.Result)
+		}
 	}
 }
