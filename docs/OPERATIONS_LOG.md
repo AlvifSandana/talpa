@@ -12,13 +12,13 @@ The log uses JSON Lines (one JSON object per line).
 - `timestamp`: RFC3339 time.
 - `plan_id`: identifier for the operation plan.
 - `command`: the executed command.
-- `action`: `scan|delete|trash|exec|skip|error`.
+- `action`: operation type. Current values include `delete`, `exec`, and `skip`.
 - `path`: target path (when applicable).
 - `rule_id`: rule identifier (when applicable).
 - `category`: rule category.
 - `size_bytes`: size of target (if known).
 - `risk`: `low|medium|high`.
-- `result`: `success|skipped|failed`.
+- `result`: operation outcome. Current values include `planned`, `already-skipped`, `skipped`, `deleted`, `updated`, `optimized`, `uninstalled`, and `error`.
 - `error`: error message (if any).
 - `duration_ms`: execution time (if applicable).
 - `dry_run`: boolean.
@@ -37,7 +37,7 @@ The log uses JSON Lines (one JSON object per line).
   "category": "xdg_cache",
   "size_bytes": 1048576,
   "risk": "low",
-  "result": "success",
+  "result": "deleted",
   "error": "",
   "duration_ms": 12,
   "dry_run": false,
@@ -55,7 +55,7 @@ The log can be disabled with:
 - Logs remain local by default.
 
 ## Error Taxonomy
-Use a consistent `error_code` in `error` details when possible.
+Use a consistent `error_code` prefix in `error` details when possible.
 
 Suggested codes:
 - `PATH_BLOCKED`: target path is in blocked list.
@@ -82,7 +82,7 @@ Example with error code:
   "category": "system",
   "size_bytes": 0,
   "risk": "high",
-  "result": "failed",
+  "result": "error",
   "error": "PATH_BLOCKED: /etc",
   "duration_ms": 1,
   "dry_run": false,

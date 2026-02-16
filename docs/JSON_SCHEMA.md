@@ -65,7 +65,7 @@ All commands return a common envelope:
 - `risk`: `low|medium|high`.
 - `selected`: boolean.
 - `requires_root`: boolean.
-- `result`: string (`planned|skipped|deleted|trashed|error`).
+- `result`: string. Current values include `planned`, `already-skipped`, `skipped`, `deleted`, `updated`, `optimized`, `uninstalled`, and `error`.
 
 ## Command Notes
 

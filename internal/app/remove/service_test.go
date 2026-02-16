@@ -114,3 +114,36 @@ func TestRunIncrementsErrorsWhenLogFails(t *testing.T) {
 		t.Fatalf("expected summary errors to include logger failure, got %d", got)
 	}
 }
+
+func TestRunIncrementsErrorsForOperationAndLogFailure(t *testing.T) {
+	savedExe := osExecutable
+	savedRemove := osRemove
+	defer func() {
+		osExecutable = savedExe
+		osRemove = savedRemove
+	}()
+
+	tmp := filepath.Join(t.TempDir(), "talpa")
+	if err := os.WriteFile(tmp, []byte("bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	osExecutable = func() (string, error) { return tmp, nil }
+	osRemove = func(name string) error { return errors.New("remove failed") }
+
+	app := &common.AppContext{
+		Options:   common.GlobalOptions{DryRun: false, Yes: true},
+		Whitelist: []string{tmp},
+		Logger:    alwaysFailRemoveLogger{},
+	}
+
+	res, err := NewService().Run(context.Background(), app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.Items[0].Result; got != "error" {
+		t.Fatalf("expected error result, got %s", got)
+	}
+	if got := res.Summary.Errors; got != 2 {
+		t.Fatalf("expected summary errors to include operation and logger failures, got %d", got)
+	}
+}
