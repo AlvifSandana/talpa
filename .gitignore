@@ -1,0 +1,27 @@
+# Binaries
+talpa
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Build outputs
+bin/
+dist/
+build/
+coverage.out
+
+# Go
+*.test
+*.out
+
+# Editor/OS
+.DS_Store
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# Talpa local runtime files
+.talpa/
