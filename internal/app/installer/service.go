@@ -2,12 +2,14 @@ package installer
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"time"
 
 	"talpa/internal/app/common"
 	"talpa/internal/domain/model"
+	"talpa/internal/domain/safety"
 )
 
 type Service struct{}
@@ -16,11 +18,17 @@ type Options struct {
 	Apply bool
 }
 
+var (
+	osUserHomeDir      = os.UserHomeDir
+	osStat             = os.Stat
+	safeDelete         = safety.SafeDelete
+	pathValidateSystem = common.ValidateSystemScopePath
+)
+
 func NewService() Service { return Service{} }
 
 func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (model.CommandResult, error) {
-	_ = ctx
-	home, err := os.UserHomeDir()
+	home, err := osUserHomeDir()
 	if err != nil {
 		return model.CommandResult{}, err
 	}
@@ -31,16 +39,51 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 		newPlanItem("installer-3", "installer.tmp", filepath.Join("/tmp", "talpa-installer"), "installer_artifact", model.RiskLow),
 	}
 
-	if opts.Apply && !app.Options.DryRun {
+	errCount := 0
+	if opts.Apply {
 		if err := common.RequireConfirmationOrDryRun(app.Options, "installer cleanup"); err != nil {
 			return model.CommandResult{}, err
 		}
-		for i := range items {
-			if err := common.ValidateSystemScopePath(items[i].Path, app.Whitelist); err != nil {
-				items[i].Result = "skipped"
-				continue
+		if !app.Options.DryRun {
+			for i := range items {
+				entry := model.OperationLogEntry{
+					Timestamp: time.Now().UTC(),
+					PlanID:    "plan-installer",
+					Command:   "installer",
+					Action:    "delete",
+					Path:      items[i].Path,
+					RuleID:    items[i].RuleID,
+					Category:  items[i].Category,
+					Risk:      string(items[i].Risk),
+					DryRun:    false,
+				}
+				if err := pathValidateSystem(items[i].Path, app.Whitelist); err != nil {
+					items[i].Result = "skipped"
+					entry.Result = items[i].Result
+					if err := app.Logger.Log(ctx, entry); err != nil {
+						errCount++
+					}
+					continue
+				}
+				if _, err := osStat(items[i].Path); errors.Is(err, os.ErrNotExist) {
+					items[i].Result = "skipped"
+					entry.Result = items[i].Result
+					if err := app.Logger.Log(ctx, entry); err != nil {
+						errCount++
+					}
+					continue
+				}
+				if err := safeDelete(items[i].Path, nil, app.Whitelist, false); err != nil {
+					items[i].Result = "error"
+					errCount++
+				} else {
+					items[i].Result = "deleted"
+				}
+				entry.Result = items[i].Result
+				if err := app.Logger.Log(ctx, entry); err != nil {
+					errCount++
+				}
 			}
-			items[i].Result = "pending_implementation"
 		}
 	}
 
@@ -52,6 +95,7 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 		Summary: model.Summary{
 			ItemsTotal:    len(items),
 			ItemsSelected: len(items),
+			Errors:        errCount,
 		},
 		Items: items,
 	}, nil
