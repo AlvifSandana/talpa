@@ -14,7 +14,18 @@ import (
 	"talpa/internal/infra/system"
 )
 
-type Service struct{}
+type Service struct {
+	readers statusReaders
+}
+
+type statusReaders struct {
+	loadAvg    func() [3]float64
+	memory     func() uint64
+	diskUsage  func(string) DiskMetric
+	net        func() NetMetric
+	cpuUsage   func() float64
+	topProcess func(int) []system.ProcessStat
+}
 
 type Metrics struct {
 	CPUUsage        float64      `json:"cpu_usage"`
@@ -43,34 +54,55 @@ type NetMetric struct {
 	RXBytes uint64 `json:"rx_bytes"`
 }
 
-var (
-	loadAvgReader    = readLoadAvg
-	memoryReader     = readMemoryUsed
-	diskUsageReader  = readDiskUsage
-	netReader        = readNetDev
-	cpuUsageReader   = readCPUUsage
-	topProcessReader = system.TopProcesses
-)
+func defaultStatusReaders() statusReaders {
+	return statusReaders{
+		loadAvg:    readLoadAvg,
+		memory:     readMemoryUsed,
+		diskUsage:  readDiskUsage,
+		net:        readNetDev,
+		cpuUsage:   readCPUUsage,
+		topProcess: system.TopProcesses,
+	}
+}
 
-func NewService() Service { return Service{} }
+func NewService() Service { return Service{readers: defaultStatusReaders()} }
 
-func (Service) Run(ctx context.Context, app *common.AppContext) (model.CommandResult, error) {
+func (s Service) Run(ctx context.Context, app *common.AppContext) (model.CommandResult, error) {
 	_ = ctx
 	start := time.Now()
+	r := defaultStatusReaders()
+	if s.readers.loadAvg != nil {
+		r.loadAvg = s.readers.loadAvg
+	}
+	if s.readers.memory != nil {
+		r.memory = s.readers.memory
+	}
+	if s.readers.diskUsage != nil {
+		r.diskUsage = s.readers.diskUsage
+	}
+	if s.readers.net != nil {
+		r.net = s.readers.net
+	}
+	if s.readers.cpuUsage != nil {
+		r.cpuUsage = s.readers.cpuUsage
+	}
+	if s.readers.topProcess != nil {
+		r.topProcess = s.readers.topProcess
+	}
 
-	load := loadAvgReader()
-	mem := memoryReader()
-	disk := diskUsageReader("/")
-	net := netReader()
+	load := r.loadAvg()
+	mem := r.memory()
+	disk := r.diskUsage("/")
+	net := r.net()
 
-	top := topProcessReader(app.Options.StatusTop)
+	top := r.topProcess(app.Options.StatusTop)
 	procs := make([]Process, 0, len(top))
 	for _, p := range top {
 		procs = append(procs, Process{PID: p.PID, Command: p.Command, CPUPercent: p.CPUPercent, MemBytes: p.MemBytes})
 	}
 
 	metrics := Metrics{
-		CPUUsage:        cpuUsageReader(),
+		CPUUsage:        r.cpuUsage(),
 		LoadAvg:         load,
 		MemoryUsedBytes: mem,
 		DiskUsage:       []DiskMetric{disk},
