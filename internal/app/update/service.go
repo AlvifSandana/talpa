@@ -2,7 +2,6 @@ package update
 
 import (
 	"context"
-	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -45,10 +44,13 @@ func (Service) Run(ctx context.Context, app *common.AppContext) (model.CommandRe
 
 	errCount := 0
 	if !app.Options.DryRun {
-		if !app.Options.Yes {
-			return model.CommandResult{}, errors.New("confirmation required for update: use --yes or --dry-run")
+		if err := common.RequireConfirmationOrDryRun(app.Options, "update"); err != nil {
+			return model.CommandResult{}, err
 		}
-		if err := osMkdirAll(filepath.Dir(target), 0o755); err != nil {
+		if err := common.ValidateSystemScopePath(target, app.Whitelist); err != nil {
+			item.Result = "skipped"
+			errCount++
+		} else if err := osMkdirAll(filepath.Dir(target), 0o755); err != nil {
 			item.Result = "error"
 			errCount++
 		} else {

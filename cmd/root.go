@@ -63,6 +63,9 @@ func init() {
 	rootCmd.AddCommand(completionCmd)
 	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(removeCmd)
+	rootCmd.AddCommand(uninstallCmd)
+	rootCmd.AddCommand(installerCmd)
+	rootCmd.AddCommand(optimizeCmd)
 }
 
 func printResult(v any) error {

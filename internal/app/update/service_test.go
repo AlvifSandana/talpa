@@ -47,7 +47,7 @@ func TestRunSkipsWhenSourceEqualsTarget(t *testing.T) {
 		return errors.New("should not copy")
 	}
 
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Logger: logging.NewNoopLogger()}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Whitelist: []string{tmp}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app)
 	if err != nil {
 		t.Fatal(err)
@@ -71,7 +71,7 @@ func TestRunUpdateCopyFailure(t *testing.T) {
 	osMkdirAll = func(path string, perm os.FileMode) error { return nil }
 	doCopyFileSafe = func(src, dst string) error { return errors.New("copy failed") }
 
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Logger: logging.NewNoopLogger()}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Whitelist: []string{"/usr/local/bin/talpa"}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app)
 	if err != nil {
 		t.Fatal(err)

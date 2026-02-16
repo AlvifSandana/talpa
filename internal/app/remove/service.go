@@ -2,7 +2,6 @@ package remove
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,10 +40,13 @@ func (Service) Run(ctx context.Context, app *common.AppContext) (model.CommandRe
 	}
 
 	if !app.Options.DryRun {
-		if !app.Options.Yes {
-			return model.CommandResult{}, errors.New("confirmation required for remove: use --yes or --dry-run")
+		if err := common.RequireConfirmationOrDryRun(app.Options, "remove"); err != nil {
+			return model.CommandResult{}, err
 		}
-		if err := osRemove(target); err != nil {
+		if err := common.ValidateSystemScopePath(target, app.Whitelist); err != nil {
+			item.Result = "skipped"
+			errCount++
+		} else if err := osRemove(target); err != nil {
 			item.Result = "error"
 			errCount++
 		} else {

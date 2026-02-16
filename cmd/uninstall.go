@@ -1,0 +1,31 @@
+package cmd
+
+import (
+	"github.com/spf13/cobra"
+
+	"talpa/internal/app/common"
+	"talpa/internal/app/uninstall"
+)
+
+var uninstallApply bool
+
+var uninstallCmd = &cobra.Command{
+	Use:   "uninstall",
+	Short: "Scaffold app uninstall workflow",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		app, err := common.FromCommand(cmd)
+		if err != nil {
+			return err
+		}
+		svc := uninstall.NewService()
+		result, err := svc.Run(cmd.Context(), app, uninstall.Options{Apply: uninstallApply})
+		if err != nil {
+			return err
+		}
+		return printResult(result)
+	},
+}
+
+func init() {
+	uninstallCmd.Flags().BoolVar(&uninstallApply, "apply", false, "Execute uninstall actions (requires --yes or --dry-run)")
+}

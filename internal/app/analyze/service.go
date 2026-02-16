@@ -3,8 +3,10 @@ package analyze
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"talpa/internal/app/common"
@@ -14,9 +16,18 @@ import (
 
 type Service struct{}
 
+type Options struct {
+	Depth          int
+	Limit          int
+	SortBy         string
+	MinSizeBytes   int64
+	Query          string
+	OnlyCandidates bool
+}
+
 func NewService() Service { return Service{} }
 
-func (Service) Run(ctx context.Context, app *common.AppContext, root string, depth int, limit int) (model.CommandResult, error) {
+func (Service) Run(ctx context.Context, app *common.AppContext, root string, opts Options) (model.CommandResult, error) {
 	_ = ctx
 	start := time.Now()
 	if root == "" {
@@ -27,20 +38,30 @@ func (Service) Run(ctx context.Context, app *common.AppContext, root string, dep
 		root = h
 	}
 
-	items, err := filesystem.Scan(root, filesystem.ScanOptions{MaxDepth: depth, Excludes: []string{"/proc", "/sys", "/dev", "/run"}})
+	items, err := filesystem.Scan(root, filesystem.ScanOptions{MaxDepth: opts.Depth, Excludes: []string{"/proc", "/sys", "/dev", "/run"}})
 	if err != nil {
 		return model.CommandResult{}, err
 	}
 
-	sort.Slice(items, func(i, j int) bool { return items[i].SizeBytes > items[j].SizeBytes })
-	if limit > 0 && len(items) > limit {
-		items = items[:limit]
+	items = filterItems(items, opts)
+	sortItems(items, opts.SortBy)
+	if opts.Limit > 0 && len(items) > opts.Limit {
+		items = items[:opts.Limit]
 	}
 
 	out := make([]model.CandidateItem, 0, len(items))
 	var estimate int64
+	candidates := 0
 	for i, it := range items {
-		estimate += it.SizeBytes
+		candidate := isCleanupCandidate(it.Path)
+		if candidate {
+			estimate += it.SizeBytes
+			candidates++
+		}
+		result := "inspect"
+		if candidate {
+			result = "candidate"
+		}
 		out = append(out, model.CandidateItem{
 			ID:           "analyze-" + strconv.Itoa(i+1),
 			RuleID:       "",
@@ -49,9 +70,9 @@ func (Service) Run(ctx context.Context, app *common.AppContext, root string, dep
 			LastModified: it.LastModified,
 			Category:     "tree_node",
 			Risk:         model.RiskMedium,
-			Selected:     false,
+			Selected:     candidate,
 			RequiresRoot: false,
-			Result:       "planned",
+			Result:       result,
 		})
 	}
 
@@ -63,10 +84,60 @@ func (Service) Run(ctx context.Context, app *common.AppContext, root string, dep
 		DryRun:        app.Options.DryRun,
 		Summary: model.Summary{
 			ItemsTotal:          len(out),
-			ItemsSelected:       0,
+			ItemsSelected:       candidates,
 			EstimatedFreedBytes: estimate,
 			Errors:              0,
 		},
 		Items: out,
 	}, nil
+}
+
+func filterItems(items []filesystem.ScanItem, opts Options) []filesystem.ScanItem {
+	if opts.MinSizeBytes <= 0 && strings.TrimSpace(opts.Query) == "" && !opts.OnlyCandidates {
+		return items
+	}
+	q := strings.ToLower(strings.TrimSpace(opts.Query))
+	out := make([]filesystem.ScanItem, 0, len(items))
+	for _, it := range items {
+		if it.SizeBytes < opts.MinSizeBytes {
+			continue
+		}
+		pathLower := strings.ToLower(it.Path)
+		if q != "" && !strings.Contains(pathLower, q) {
+			continue
+		}
+		if opts.OnlyCandidates && !isCleanupCandidate(it.Path) {
+			continue
+		}
+		out = append(out, it)
+	}
+	return out
+}
+
+func sortItems(items []filesystem.ScanItem, sortBy string) {
+	switch sortBy {
+	case "path":
+		sort.Slice(items, func(i, j int) bool { return items[i].Path < items[j].Path })
+	case "mtime":
+		sort.Slice(items, func(i, j int) bool { return items[i].LastModified.After(items[j].LastModified) })
+	default:
+		sort.Slice(items, func(i, j int) bool { return items[i].SizeBytes > items[j].SizeBytes })
+	}
+}
+
+func isCleanupCandidate(path string) bool {
+	base := strings.ToLower(filepath.Base(path))
+	for _, n := range []string{"cache", "tmp", "temp", "log", "logs", "thumbnail", "thumbnails", "node_modules", "target", "dist", "build", "venv", ".venv", "__pycache__", ".tox", ".mypy_cache", "coverage", ".gradle", ".npm", ".yarn"} {
+		if base == n {
+			return true
+		}
+	}
+
+	p := strings.ToLower(path)
+	for _, seg := range []string{"/.cache/", "/cache/", "/tmp/", "/temp/", "/logs/", "/log/", "/node_modules/", "/target/", "/dist/", "/build/", "/__pycache__/", "/.gradle/", "/.npm/", "/.yarn/"} {
+		if strings.Contains(p, seg) {
+			return true
+		}
+	}
+	return false
 }
