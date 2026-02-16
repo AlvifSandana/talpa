@@ -27,6 +27,18 @@ CI note:
 - Steps that pipe output to `tee` must use `set -o pipefail` so upstream command failures are not masked.
 - CI uploads collected logs as artifacts when jobs fail to speed up troubleshooting.
 
+## CI Troubleshooting
+When CI fails:
+1. Open the failed job and download the uploaded artifact (`ci-logs-test` or `ci-logs-distro-*`).
+2. Review step logs in order (`go-test.log`, `go-vet.log`, `go-test-race.log`, `smoke-json.log`, `smoke-negative.log`).
+3. For distro failures, inspect `distro-<name>.log` first to separate package install failures from Go test failures.
+4. Reproduce locally with the same scripts (`scripts/ci/smoke_json.sh`, `scripts/ci/smoke_negative.sh`) and test commands.
+
+Operational notes:
+- CI uses per-job timeouts and container execution timeout guards to avoid stuck runs.
+- Distro dependency install steps use retry with backoff for transient network failures.
+- `distro-best-effort` is non-blocking (`continue-on-error: true`), so investigate failures even when the overall workflow is green.
+
 ## Verification
 - Installer script must verify SHA256.
 - All downloads must be via HTTPS.

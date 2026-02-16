@@ -13,9 +13,14 @@ defaults:
   run:
     shell: bash
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,10 +55,12 @@ jobs:
           name: ci-logs-test
           path: ${{ env.CI_LOG_DIR }}/
           if-no-files-found: ignore
+          retention-days: 14
 
   distro-best-effort:
     needs: test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -73,16 +80,32 @@ jobs:
       - name: Run tests in ${{ matrix.distro }} container
         run: |
           set -o pipefail
-          docker run --rm \
+          timeout --signal=TERM --kill-after=30s 15m docker run --rm \
             -v "$PWD":/workspace \
             -w /workspace \
             "${{ matrix.image }}" \
             bash -lc '
               set -euo pipefail
+
+              retry() {
+                local attempts="$1"
+                local base_delay="$2"
+                shift 2
+                local try=1
+                until "$@"; do
+                  echo "Attempt ${try}/${attempts} failed: $*"
+                  if [ "$try" -ge "$attempts" ]; then
+                    return 1
+                  fi
+                  sleep "$((base_delay * try))"
+                  try="$((try + 1))"
+                done
+              }
+
               if command -v dnf >/dev/null 2>&1; then
-                dnf install -y golang python3
+                retry 3 5 dnf install -y golang python3
               elif command -v pacman >/dev/null 2>&1; then
-                pacman -Syu --noconfirm --needed go python
+                retry 3 5 pacman -Syu --noconfirm --needed go python
               fi
               go test ./...
             ' 2>&1 | tee "$CI_LOG_DIR/distro-${{ matrix.distro }}.log"
@@ -94,3 +117,4 @@ jobs:
           name: ci-logs-distro-${{ matrix.distro }}
           path: ${{ env.CI_LOG_DIR }}/
           if-no-files-found: ignore
+          retention-days: 14
