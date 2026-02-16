@@ -33,6 +33,33 @@ func TestRunPlan(t *testing.T) {
 	}
 }
 
+func TestRunPlanMarksMissingArtifactsSkipped(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	savedStat := osStat
+	defer func() { osStat = savedStat }()
+	osStat = func(name string) (os.FileInfo, error) {
+		return nil, os.ErrNotExist
+	}
+
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: true}, Logger: logging.NewNoopLogger()}
+	res, err := NewService().Run(context.Background(), app, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Summary.ItemsSelected != 0 {
+		t.Fatalf("expected zero selected artifacts when missing, got %d", res.Summary.ItemsSelected)
+	}
+	for _, item := range res.Items {
+		if item.Selected {
+			t.Fatalf("expected missing installer artifact to be unselected: %s", item.RuleID)
+		}
+		if item.Result != "skipped" {
+			t.Fatalf("expected missing installer artifact skipped, got %s", item.Result)
+		}
+	}
+}
+
 func TestRunApplyExecutesWithConfirmation(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

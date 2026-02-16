@@ -38,6 +38,19 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 		newPlanItem("installer-2", "installer.download.sig", filepath.Join(home, "Downloads", "talpa-installer.sh.sha256"), "installer_artifact", model.RiskLow),
 		newPlanItem("installer-3", "installer.tmp", filepath.Join("/tmp", "talpa-installer"), "installer_artifact", model.RiskLow),
 	}
+	for i := range items {
+		if _, err := osStat(items[i].Path); errors.Is(err, os.ErrNotExist) {
+			items[i].Selected = false
+			items[i].Result = "skipped"
+		}
+	}
+
+	selected := 0
+	for _, item := range items {
+		if item.Selected {
+			selected++
+		}
+	}
 
 	errCount := 0
 	if opts.Apply {
@@ -46,6 +59,9 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 		}
 		if !app.Options.DryRun {
 			for i := range items {
+				if !items[i].Selected {
+					continue
+				}
 				entry := model.OperationLogEntry{
 					Timestamp: time.Now().UTC(),
 					PlanID:    "plan-installer",
@@ -94,7 +110,7 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 		DryRun:        app.Options.DryRun,
 		Summary: model.Summary{
 			ItemsTotal:    len(items),
-			ItemsSelected: len(items),
+			ItemsSelected: selected,
 			Errors:        errCount,
 		},
 		Items: items,

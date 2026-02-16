@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0",
+  "command": "installer",
+  "timestamp": "2000-01-01T00:00:00Z",
+  "duration_ms": 0,
+  "dry_run": true,
+  "summary": {
+    "items_total": 3,
+    "items_selected": 0,
+    "estimated_freed_bytes": 0,
+    "errors": 0
+  },
+  "items": [
+    {
+      "id": "installer-1",
+      "rule_id": "installer.download",
+      "path": "$HOME/Downloads/talpa-installer.sh",
+      "size_bytes": 0,
+      "last_modified": "2000-01-01T00:00:00Z",
+      "category": "installer_artifact",
+      "risk": "low",
+      "selected": false,
+      "requires_root": false,
+      "result": "skipped"
+    },
+    {
+      "id": "installer-2",
+      "rule_id": "installer.download.sig",
+      "path": "$HOME/Downloads/talpa-installer.sh.sha256",
+      "size_bytes": 0,
+      "last_modified": "2000-01-01T00:00:00Z",
+      "category": "installer_artifact",
+      "risk": "low",
+      "selected": false,
+      "requires_root": false,
+      "result": "skipped"
+    },
+    {
+      "id": "installer-3",
+      "rule_id": "installer.tmp",
+      "path": "/tmp/talpa-installer",
+      "size_bytes": 0,
+      "last_modified": "2000-01-01T00:00:00Z",
+      "category": "installer_artifact",
+      "risk": "low",
+      "selected": false,
+      "requires_root": false,
+      "result": "skipped"
+    }
+  ]
+}
