@@ -106,6 +106,15 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 			Result:       result,
 		})
 	}
+	for i := range items {
+		if strings.HasPrefix(items[i].RuleID, "uninstall.pkg.") {
+			continue
+		}
+		if _, err := osStat(items[i].Path); errors.Is(err, os.ErrNotExist) {
+			items[i].Selected = false
+			items[i].Result = "skipped"
+		}
+	}
 
 	selected := 0
 	for _, item := range items {
@@ -121,6 +130,9 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 		}
 		if !app.Options.DryRun {
 			for i := range items {
+				if !items[i].Selected {
+					continue
+				}
 				if strings.HasPrefix(items[i].RuleID, "uninstall.pkg.") {
 					entry := model.OperationLogEntry{
 						Timestamp: time.Now().UTC(),

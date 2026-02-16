@@ -35,6 +35,34 @@ func TestRunPlan(t *testing.T) {
 	}
 }
 
+func TestRunPlanMarksMissingLocalArtifactsSkipped(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	savedStat := osStat
+	defer func() { osStat = savedStat }()
+	osStat = func(name string) (os.FileInfo, error) {
+		return nil, os.ErrNotExist
+	}
+
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: true}, Logger: logging.NewNoopLogger()}
+	res, err := NewService().Run(context.Background(), app, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, item := range res.Items {
+		if item.RuleID == "uninstall.pkg.apt" || item.RuleID == "uninstall.pkg.dnf" || item.RuleID == "uninstall.pkg.pacman" || item.RuleID == "uninstall.pkg.zypper" || item.RuleID == "uninstall.pkg.snap" || item.RuleID == "uninstall.pkg.flatpak" {
+			continue
+		}
+		if item.Selected {
+			t.Fatalf("expected missing local uninstall item to be unselected: %s", item.RuleID)
+		}
+		if item.Result != "skipped" {
+			t.Fatalf("expected missing local uninstall item skipped, got %s", item.Result)
+		}
+	}
+}
+
 func TestRunApplyExecutesWithConfirmation(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -440,7 +468,10 @@ func TestResolveTrustedExecutableRejectsUntrustedPath(t *testing.T) {
 
 func TestRunPlanMarksUnavailableUninstallTargetSkipped(t *testing.T) {
 	savedResolveExec := resolveExec
+	savedStat := osStat
 	defer func() { resolveExec = savedResolveExec }()
+	defer func() { osStat = savedStat }()
+	osStat = func(name string) (os.FileInfo, error) { return nil, nil }
 
 	resolveExec = func(name string) (string, error) {
 		if name == "dnf" {

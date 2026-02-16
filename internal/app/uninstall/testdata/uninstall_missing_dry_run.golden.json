@@ -1,0 +1,63 @@
+{
+  "schema_version": "1.0",
+  "command": "uninstall",
+  "timestamp": "2000-01-01T00:00:00Z",
+  "duration_ms": 0,
+  "dry_run": true,
+  "summary": {
+    "items_total": 4,
+    "items_selected": 0,
+    "estimated_freed_bytes": 0,
+    "errors": 0
+  },
+  "items": [
+    {
+      "id": "uninstall-1",
+      "rule_id": "uninstall.binary",
+      "path": "$HOME/.local/bin/talpa",
+      "size_bytes": 0,
+      "last_modified": "2000-01-01T00:00:00Z",
+      "category": "app_binary",
+      "risk": "high",
+      "selected": false,
+      "requires_root": false,
+      "result": "skipped"
+    },
+    {
+      "id": "uninstall-2",
+      "rule_id": "uninstall.binary.system",
+      "path": "/usr/local/bin/talpa",
+      "size_bytes": 0,
+      "last_modified": "2000-01-01T00:00:00Z",
+      "category": "app_binary",
+      "risk": "high",
+      "selected": false,
+      "requires_root": false,
+      "result": "skipped"
+    },
+    {
+      "id": "uninstall-3",
+      "rule_id": "uninstall.config",
+      "path": "$HOME/.config/talpa",
+      "size_bytes": 0,
+      "last_modified": "2000-01-01T00:00:00Z",
+      "category": "config",
+      "risk": "medium",
+      "selected": false,
+      "requires_root": false,
+      "result": "skipped"
+    },
+    {
+      "id": "uninstall-4",
+      "rule_id": "uninstall.cache",
+      "path": "$HOME/.cache/talpa",
+      "size_bytes": 0,
+      "last_modified": "2000-01-01T00:00:00Z",
+      "category": "cache",
+      "risk": "low",
+      "selected": false,
+      "requires_root": false,
+      "result": "skipped"
+    }
+  ]
+}
