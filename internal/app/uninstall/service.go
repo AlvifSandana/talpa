@@ -347,9 +347,6 @@ func parseUninstallTarget(v string) (uninstallTarget, error) {
 	if strings.HasPrefix(name, "-") {
 		return uninstallTarget{}, fmt.Errorf("invalid target %q: package name must not start with '-'", v)
 	}
-	if !isValidTargetName(name) {
-		return uninstallTarget{}, fmt.Errorf("invalid target %q: unsupported package name characters", v)
-	}
 	allowed := map[string]struct{}{
 		"apt":     {},
 		"dnf":     {},
@@ -360,6 +357,9 @@ func parseUninstallTarget(v string) (uninstallTarget, error) {
 	}
 	if _, ok := allowed[backend]; !ok {
 		return uninstallTarget{}, fmt.Errorf("invalid backend %q: supported backends are apt,dnf,pacman,zypper,snap,flatpak", backend)
+	}
+	if !isValidTargetNameForBackend(backend, name) {
+		return uninstallTarget{}, fmt.Errorf("invalid target %q: unsupported package name for backend %q", v, backend)
 	}
 	return uninstallTarget{Backend: backend, Name: name}, nil
 }
@@ -412,7 +412,22 @@ func isTrustedExecutablePath(path string) bool {
 	return false
 }
 
-func isValidTargetName(name string) bool {
+func isValidTargetNameForBackend(backend, name string) bool {
+	if !isCommonTargetName(name) {
+		return false
+	}
+
+	switch backend {
+	case "snap":
+		return isValidSnapTargetName(name)
+	case "flatpak":
+		return isValidFlatpakTargetName(name)
+	default:
+		return isValidPkgTargetName(name)
+	}
+}
+
+func isCommonTargetName(name string) bool {
 	for _, r := range name {
 		if r <= 31 || r == 127 {
 			return false
@@ -420,14 +435,74 @@ func isValidTargetName(name string) bool {
 		if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
 			return false
 		}
+	}
+	return true
+}
+
+func isValidPkgTargetName(name string) bool {
+	if len(name) == 0 {
+		return false
+	}
+	for i, r := range name {
+		if i == 0 {
+			if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')) {
+				return false
+			}
+		}
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
 			continue
 		}
 		switch r {
-		case '.', '_', '+', ':', '@', '/', '-', '~', '=':
+		case '.', '_', '+', ':', '@', '-', '~', '=':
 			continue
 		default:
 			return false
+		}
+	}
+	return true
+}
+
+func isValidSnapTargetName(name string) bool {
+	if len(name) < 2 || len(name) > 40 {
+		return false
+	}
+	for i, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			continue
+		}
+		if r != '-' {
+			return false
+		}
+		if i == 0 || i == len(name)-1 {
+			return false
+		}
+	}
+	if strings.Contains(name, "--") {
+		return false
+	}
+	first := name[0]
+	return first >= 'a' && first <= 'z'
+}
+
+func isValidFlatpakTargetName(name string) bool {
+	segments := strings.Split(name, "/")
+	if len(segments) < 1 || len(segments) > 3 {
+		return false
+	}
+	for _, seg := range segments {
+		if seg == "" || seg == "." || seg == ".." {
+			return false
+		}
+		for _, r := range seg {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+				continue
+			}
+			switch r {
+			case '.', '_', '-':
+				continue
+			default:
+				return false
+			}
 		}
 	}
 	return true

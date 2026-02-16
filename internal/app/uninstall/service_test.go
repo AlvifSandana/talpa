@@ -281,6 +281,79 @@ func TestRunRejectsInjectedTargetPayloads(t *testing.T) {
 	}
 }
 
+func TestRunRejectsSlashForPackageManagerTargets(t *testing.T) {
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: true}, Logger: logging.NewNoopLogger()}
+	_, err := NewService().Run(context.Background(), app, Options{Targets: []string{"apt:vim/stable"}})
+	if err == nil {
+		t.Fatal("expected parse failure for apt target with slash")
+	}
+}
+
+func TestRunRejectsLeadingPunctuationForPackageManagerTargets(t *testing.T) {
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: true}, Logger: logging.NewNoopLogger()}
+	payloads := []string{
+		"apt:.vim",
+		"dnf:+vim",
+		"pacman:-vim",
+	}
+	for _, payload := range payloads {
+		_, err := NewService().Run(context.Background(), app, Options{Targets: []string{payload}})
+		if err == nil {
+			t.Fatalf("expected parse failure for leading punctuation target %q", payload)
+		}
+	}
+}
+
+func TestRunAcceptsFlatpakRefTargets(t *testing.T) {
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: true}, Logger: logging.NewNoopLogger()}
+	_, err := NewService().Run(context.Background(), app, Options{Targets: []string{"flatpak:org.mozilla.firefox/x86_64/stable"}})
+	if err != nil {
+		t.Fatalf("expected flatpak ref target to be accepted: %v", err)
+	}
+}
+
+func TestRunRejectsMalformedFlatpakRefTargets(t *testing.T) {
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: true}, Logger: logging.NewNoopLogger()}
+	payloads := []string{
+		"flatpak:org.mozilla.firefox/x86_64/stable/extra",
+		"flatpak:org.mozilla.firefox//stable",
+		"flatpak:/x86_64/stable",
+		"flatpak:../x86_64/stable",
+		"flatpak:org.mozilla.firefox/./stable",
+		"flatpak:org.mozilla.firefox/x86_64/stable!",
+	}
+	for _, payload := range payloads {
+		_, err := NewService().Run(context.Background(), app, Options{Targets: []string{payload}})
+		if err == nil {
+			t.Fatalf("expected malformed flatpak ref parse failure for %q", payload)
+		}
+	}
+}
+
+func TestRunAcceptsValidSnapTargets(t *testing.T) {
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: true}, Logger: logging.NewNoopLogger()}
+	_, err := NewService().Run(context.Background(), app, Options{Targets: []string{"snap:code-insiders"}})
+	if err != nil {
+		t.Fatalf("expected valid snap target to be accepted: %v", err)
+	}
+}
+
+func TestRunRejectsInvalidSnapTargets(t *testing.T) {
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: true}, Logger: logging.NewNoopLogger()}
+	payloads := []string{
+		"snap:Code",
+		"snap:-code",
+		"snap:code--insiders",
+		"snap:c",
+	}
+	for _, payload := range payloads {
+		_, err := NewService().Run(context.Background(), app, Options{Targets: []string{payload}})
+		if err == nil {
+			t.Fatalf("expected invalid snap target parse failure for %q", payload)
+		}
+	}
+}
+
 func TestRunApplyTargetCommandFailureSetsError(t *testing.T) {
 	savedRun := runCmd
 	savedUID := getEUID
