@@ -131,22 +131,7 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 		if !app.Options.DryRun {
 			for i := range items {
 				if !items[i].Selected {
-					entry := model.OperationLogEntry{
-						Timestamp: time.Now().UTC(),
-						PlanID:    "plan-uninstall",
-						Command:   "uninstall",
-						Action:    "skip",
-						Path:      items[i].Path,
-						RuleID:    items[i].RuleID,
-						Category:  items[i].Category,
-						Risk:      string(items[i].Risk),
-						Result:    items[i].Result,
-						DryRun:    false,
-					}
-					if entry.Result == "" {
-						entry.Result = "skipped"
-					}
-					if err := app.Logger.Log(ctx, entry); err != nil {
+					if err := common.LogApplySkip(ctx, app.Logger, "plan-uninstall", "uninstall", items[i]); err != nil {
 						errCount++
 					}
 					continue
