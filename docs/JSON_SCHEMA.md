@@ -53,7 +53,7 @@ All commands return a common envelope:
 - `items_total`: integer.
 - `items_selected`: integer.
 - `estimated_freed_bytes`: integer.
-- `errors`: integer.
+- `errors`: integer. Includes execution failures and operation-log write failures.
 
 ### Item
 - `id`: string.

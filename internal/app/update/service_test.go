@@ -8,8 +8,15 @@ import (
 	"testing"
 
 	"talpa/internal/app/common"
+	"talpa/internal/domain/model"
 	"talpa/internal/infra/logging"
 )
+
+type alwaysFailUpdateLogger struct{}
+
+func (alwaysFailUpdateLogger) Log(context.Context, model.OperationLogEntry) error {
+	return errors.New("log failed")
+}
 
 func TestRunDryRun(t *testing.T) {
 	app := &common.AppContext{Options: common.GlobalOptions{DryRun: true}, Logger: logging.NewNoopLogger()}
@@ -78,5 +85,34 @@ func TestRunUpdateCopyFailure(t *testing.T) {
 	}
 	if got := res.Items[0].Result; got != "error" {
 		t.Fatalf("expected error result, got %s", got)
+	}
+}
+
+func TestRunIncrementsErrorsWhenLogFails(t *testing.T) {
+	savedExe := osExecutable
+	savedCopy := doCopyFileSafe
+	savedMkdirAll := osMkdirAll
+	defer func() {
+		osExecutable = savedExe
+		doCopyFileSafe = savedCopy
+		osMkdirAll = savedMkdirAll
+	}()
+
+	osExecutable = func() (string, error) { return "/usr/local/bin/talpa-dev", nil }
+	osMkdirAll = func(path string, perm os.FileMode) error { return nil }
+	doCopyFileSafe = func(src, dst string) error { return nil }
+
+	app := &common.AppContext{
+		Options:   common.GlobalOptions{DryRun: false, Yes: true},
+		Whitelist: []string{"/usr/local/bin/talpa"},
+		Logger:    alwaysFailUpdateLogger{},
+	}
+
+	res, err := NewService().Run(context.Background(), app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.Summary.Errors; got != 1 {
+		t.Fatalf("expected summary errors to include logger failure, got %d", got)
 	}
 }

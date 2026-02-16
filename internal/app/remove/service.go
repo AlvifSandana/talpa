@@ -52,7 +52,7 @@ func (Service) Run(ctx context.Context, app *common.AppContext) (model.CommandRe
 		} else {
 			item.Result = "deleted"
 		}
-		_ = app.Logger.Log(ctx, model.OperationLogEntry{
+		if err := app.Logger.Log(ctx, model.OperationLogEntry{
 			Timestamp: time.Now().UTC(),
 			PlanID:    "plan-remove",
 			Command:   "remove",
@@ -63,7 +63,9 @@ func (Service) Run(ctx context.Context, app *common.AppContext) (model.CommandRe
 			Risk:      string(item.Risk),
 			Result:    item.Result,
 			DryRun:    false,
-		})
+		}); err != nil {
+			errCount++
+		}
 	}
 
 	item.LastModified = time.Now().UTC()

@@ -8,8 +8,15 @@ import (
 	"testing"
 
 	"talpa/internal/app/common"
+	"talpa/internal/domain/model"
 	"talpa/internal/infra/logging"
 )
+
+type alwaysFailRemoveLogger struct{}
+
+func (alwaysFailRemoveLogger) Log(context.Context, model.OperationLogEntry) error {
+	return errors.New("log failed")
+}
 
 func TestRunDryRun(t *testing.T) {
 	app := &common.AppContext{Options: common.GlobalOptions{DryRun: true}, Logger: logging.NewNoopLogger()}
@@ -75,5 +82,35 @@ func TestRunRemoveFailure(t *testing.T) {
 	}
 	if got := res.Items[0].Result; got != "error" {
 		t.Fatalf("expected error, got %s", got)
+	}
+}
+
+func TestRunIncrementsErrorsWhenLogFails(t *testing.T) {
+	savedExe := osExecutable
+	savedRemove := osRemove
+	defer func() {
+		osExecutable = savedExe
+		osRemove = savedRemove
+	}()
+
+	tmp := filepath.Join(t.TempDir(), "talpa")
+	if err := os.WriteFile(tmp, []byte("bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	osExecutable = func() (string, error) { return tmp, nil }
+	osRemove = func(name string) error { return nil }
+
+	app := &common.AppContext{
+		Options:   common.GlobalOptions{DryRun: false, Yes: true},
+		Whitelist: []string{tmp},
+		Logger:    alwaysFailRemoveLogger{},
+	}
+
+	res, err := NewService().Run(context.Background(), app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.Summary.Errors; got != 1 {
+		t.Fatalf("expected summary errors to include logger failure, got %d", got)
 	}
 }

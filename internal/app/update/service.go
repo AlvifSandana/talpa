@@ -24,7 +24,6 @@ var (
 func NewService() Service { return Service{} }
 
 func (Service) Run(ctx context.Context, app *common.AppContext) (model.CommandResult, error) {
-	_ = ctx
 	exe, err := osExecutable()
 	if err != nil {
 		return model.CommandResult{}, err
@@ -64,7 +63,7 @@ func (Service) Run(ctx context.Context, app *common.AppContext) (model.CommandRe
 			}
 		}
 
-		_ = app.Logger.Log(ctx, model.OperationLogEntry{
+		if err := app.Logger.Log(ctx, model.OperationLogEntry{
 			Timestamp: time.Now().UTC(),
 			PlanID:    "plan-update",
 			Command:   "update",
@@ -75,7 +74,9 @@ func (Service) Run(ctx context.Context, app *common.AppContext) (model.CommandRe
 			Risk:      string(item.Risk),
 			Result:    item.Result,
 			DryRun:    false,
-		})
+		}); err != nil {
+			errCount++
+		}
 	}
 
 	if st, err := osStat(exe); err == nil {
