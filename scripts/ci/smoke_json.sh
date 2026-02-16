@@ -6,7 +6,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 cd "$ROOT_DIR"
 
-BIN_PATH="/tmp/talpa-smoke"
+BIN_PATH="$(mktemp /tmp/talpa-smoke.XXXXXX)"
+trap 'rm -f "$BIN_PATH"' EXIT
 go build -o "$BIN_PATH" ./cmd/talpa
 
 run_and_validate_json() {

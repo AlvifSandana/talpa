@@ -42,6 +42,9 @@ assert_fail_contains "status invalid interval" "--interval must be >= 1" status 
 assert_fail_contains "status invalid top" "--top must be >= 1" status --top 0
 assert_fail_contains "analyze invalid depth" "--depth must be >= 1" analyze --depth 0
 assert_fail_contains "analyze invalid sort" "--sort must be one of" analyze --sort invalid
+assert_fail_contains "analyze invalid min-size" "--min-size must be >= 0" analyze --min-size -1
 assert_fail_contains "uninstall invalid target" "invalid target" uninstall --dry-run --target invalid
+assert_fail_contains "installer apply requires confirm" "confirmation required for installer cleanup" installer --apply
+assert_fail_contains "optimize apply requires confirm" "confirmation required for optimize" optimize --apply
 
 echo "[smoke-negative] all negative command checks passed"
