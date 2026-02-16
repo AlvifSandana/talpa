@@ -26,3 +26,6 @@ jobs:
 
       - name: Run race tests
         run: go test -race ./...
+
+      - name: Run CLI JSON smoke checks
+        run: bash scripts/ci/smoke_json.sh
