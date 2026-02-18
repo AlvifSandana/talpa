@@ -743,13 +743,27 @@ func TestRunApplyCountsPlanDetectedStatError(t *testing.T) {
 	for _, e := range logger.entries {
 		if e.Path == binary && e.Result == "error" {
 			logged = true
-			if e.Error == "" {
-				t.Fatalf("expected logged error message for plan-detected stat failure")
+			if e.Error != os.ErrPermission.Error() {
+				t.Fatalf("unexpected logged error for plan-detected stat failure: %q", e.Error)
+			}
+			if e.Category != "app_binary" {
+				t.Fatalf("expected normalized category app_binary, got %q", e.Category)
 			}
 		}
 	}
 	if !logged {
 		t.Fatalf("expected error log entry for plan-detected stat failure")
+	}
+}
+
+func TestPlanStatErrorCategoryRoundTrip(t *testing.T) {
+	err := os.ErrPermission
+	encoded := planStatErrorCategory("app_binary", err)
+	if got := extractPlanStatError(encoded); got != err.Error() {
+		t.Fatalf("unexpected extracted plan stat error: got %q want %q", got, err.Error())
+	}
+	if got := stripPlanStatErrorCategory(encoded); got != "app_binary" {
+		t.Fatalf("unexpected stripped category: got %q want %q", got, "app_binary")
 	}
 }
 

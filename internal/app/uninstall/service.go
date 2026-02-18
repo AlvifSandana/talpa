@@ -124,6 +124,7 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 		if err != nil {
 			items[i].Selected = false
 			items[i].Result = "error"
+			items[i].Category = planStatErrorCategory(items[i].Category, err)
 		}
 	}
 
@@ -144,6 +145,10 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 				if !items[i].Selected {
 					if items[i].Result == "error" {
 						errCount++
+						reason := extractPlanStatError(items[i].Category)
+						if reason == "" {
+							reason = "pre-apply stat failed"
+						}
 						entry := model.OperationLogEntry{
 							Timestamp: time.Now().UTC(),
 							PlanID:    "plan-uninstall",
@@ -151,10 +156,10 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 							Action:    "skip",
 							Path:      items[i].Path,
 							RuleID:    items[i].RuleID,
-							Category:  items[i].Category,
+							Category:  stripPlanStatErrorCategory(items[i].Category),
 							Risk:      string(items[i].Risk),
 							Result:    items[i].Result,
-							Error:     "pre-apply stat failed",
+							Error:     reason,
 							DryRun:    false,
 						}
 						if err := app.Logger.Log(ctx, entry); err != nil {
@@ -320,6 +325,35 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 		},
 		Items: items,
 	}, nil
+}
+
+func planStatErrorCategory(category string, err error) string {
+	base := strings.TrimSpace(category)
+	if base == "" {
+		base = "uninstall"
+	}
+	if err == nil {
+		return base
+	}
+	return base + "|plan_stat_error=" + strings.TrimSpace(err.Error())
+}
+
+func extractPlanStatError(category string) string {
+	marker := "|plan_stat_error="
+	idx := strings.LastIndex(category, marker)
+	if idx < 0 {
+		return ""
+	}
+	return strings.TrimSpace(category[idx+len(marker):])
+}
+
+func stripPlanStatErrorCategory(category string) string {
+	marker := "|plan_stat_error="
+	idx := strings.LastIndex(category, marker)
+	if idx < 0 {
+		return category
+	}
+	return category[:idx]
 }
 
 func uninstallBinaryTargets(home, executable string, executableErr error) []string {
