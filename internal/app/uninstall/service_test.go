@@ -590,6 +590,169 @@ func TestRunApplyLogsUnselectedItemsAsSkipped(t *testing.T) {
 	}
 }
 
+func TestRunPlanMarksLocalStatErrorAsItemError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	binary := filepath.Join(home, ".local", "bin", "talpa")
+	if err := os.MkdirAll(filepath.Dir(binary), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(binary, []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	savedStat := osStat
+	defer func() { osStat = savedStat }()
+	osStat = func(name string) (os.FileInfo, error) {
+		if name == binary {
+			return nil, os.ErrPermission
+		}
+		return nil, os.ErrNotExist
+	}
+
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: true}, Logger: logging.NewNoopLogger()}
+	res, err := NewService().Run(context.Background(), app, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, item := range res.Items {
+		if item.Path == binary {
+			found = true
+			if item.Selected {
+				t.Fatalf("expected stat-error local item to be unselected")
+			}
+			if item.Result != "error" {
+				t.Fatalf("expected stat-error local item result error, got %s", item.Result)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected local binary item in plan")
+	}
+}
+
+func TestRunApplyMarksLocalStatErrorAsItemError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	binary := filepath.Join(home, ".local", "bin", "talpa")
+	if err := os.MkdirAll(filepath.Dir(binary), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(binary, []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	savedExe := osExecutable
+	savedStat := osStat
+	defer func() {
+		osExecutable = savedExe
+		osStat = savedStat
+	}()
+	osExecutable = func() (string, error) { return binary, nil }
+	statCount := 0
+	osStat = func(name string) (os.FileInfo, error) {
+		if name == binary {
+			statCount++
+			if statCount == 1 {
+				return fakeFileInfo{name: filepath.Base(binary), dir: false}, nil
+			}
+			return nil, os.ErrPermission
+		}
+		return nil, os.ErrNotExist
+	}
+
+	logger := &captureUninstallLogger{}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Whitelist: []string{binary}, Logger: logger}
+	res, err := NewService().Run(context.Background(), app, Options{Apply: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, item := range res.Items {
+		if item.Path == binary {
+			found = true
+			if item.Result != "error" {
+				t.Fatalf("expected stat-error binary result error, got %s", item.Result)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected binary item in apply result")
+	}
+	if res.Summary.Errors == 0 {
+		t.Fatalf("expected summary errors > 0 for stat error")
+	}
+
+	logged := false
+	for _, e := range logger.entries {
+		if e.Path == binary {
+			logged = true
+			if e.Result != "error" {
+				t.Fatalf("expected logged error result, got %s", e.Result)
+			}
+			if e.Error == "" {
+				t.Fatalf("expected logged error message for stat failure")
+			}
+		}
+	}
+	if !logged {
+		t.Fatalf("expected log entry for stat-error local binary")
+	}
+}
+
+func TestRunApplyCountsPlanDetectedStatError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	binary := filepath.Join(home, ".local", "bin", "talpa")
+	if err := os.MkdirAll(filepath.Dir(binary), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(binary, []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	savedExe := osExecutable
+	savedStat := osStat
+	defer func() {
+		osExecutable = savedExe
+		osStat = savedStat
+	}()
+	osExecutable = func() (string, error) { return binary, nil }
+	osStat = func(name string) (os.FileInfo, error) {
+		if name == binary {
+			return nil, os.ErrPermission
+		}
+		return nil, os.ErrNotExist
+	}
+
+	logger := &captureUninstallLogger{}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Whitelist: []string{binary}, Logger: logger}
+	res, err := NewService().Run(context.Background(), app, Options{Apply: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if res.Summary.Errors == 0 {
+		t.Fatalf("expected summary errors > 0 for plan-detected stat error")
+	}
+
+	logged := false
+	for _, e := range logger.entries {
+		if e.Path == binary && e.Result == "error" {
+			logged = true
+			if e.Error == "" {
+				t.Fatalf("expected logged error message for plan-detected stat failure")
+			}
+		}
+	}
+	if !logged {
+		t.Fatalf("expected error log entry for plan-detected stat failure")
+	}
+}
+
 func TestDiscoverUninstallArtifactsFindsDesktopAndLeftovers(t *testing.T) {
 	home := t.TempDir()
 	entries := map[string][]os.DirEntry{

@@ -115,9 +115,15 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 		if strings.HasPrefix(items[i].RuleID, "uninstall.pkg.") {
 			continue
 		}
-		if _, err := osStat(items[i].Path); errors.Is(err, os.ErrNotExist) {
+		_, err := osStat(items[i].Path)
+		if errors.Is(err, os.ErrNotExist) {
 			items[i].Selected = false
 			items[i].Result = "skipped"
+			continue
+		}
+		if err != nil {
+			items[i].Selected = false
+			items[i].Result = "error"
 		}
 	}
 
@@ -136,6 +142,26 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 		if !app.Options.DryRun {
 			for i := range items {
 				if !items[i].Selected {
+					if items[i].Result == "error" {
+						errCount++
+						entry := model.OperationLogEntry{
+							Timestamp: time.Now().UTC(),
+							PlanID:    "plan-uninstall",
+							Command:   "uninstall",
+							Action:    "skip",
+							Path:      items[i].Path,
+							RuleID:    items[i].RuleID,
+							Category:  items[i].Category,
+							Risk:      string(items[i].Risk),
+							Result:    items[i].Result,
+							Error:     "pre-apply stat failed",
+							DryRun:    false,
+						}
+						if err := app.Logger.Log(ctx, entry); err != nil {
+							errCount++
+						}
+						continue
+					}
 					if err := common.LogApplySkip(ctx, app.Logger, "plan-uninstall", "uninstall", items[i]); err != nil {
 						errCount++
 					}
@@ -249,9 +275,20 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 					}
 					continue
 				}
-				if _, err := osStat(items[i].Path); errors.Is(err, os.ErrNotExist) {
+				_, err := osStat(items[i].Path)
+				if errors.Is(err, os.ErrNotExist) {
 					items[i].Result = "skipped"
 					entry.Result = items[i].Result
+					if err := app.Logger.Log(ctx, entry); err != nil {
+						errCount++
+					}
+					continue
+				}
+				if err != nil {
+					items[i].Result = "error"
+					errCount++
+					entry.Result = items[i].Result
+					entry.Error = err.Error()
 					if err := app.Logger.Log(ctx, entry); err != nil {
 						errCount++
 					}
