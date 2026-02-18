@@ -172,6 +172,273 @@ func TestRunApplySkipsWhenPathMissing(t *testing.T) {
 	}
 }
 
+func TestRunPlanSkipsDirectoryArtifacts(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	targetDir := filepath.Join(home, "Downloads", "talpa-installer-archive")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	seededDownload := filepath.Join(home, "Downloads", "talpa-installer.sh")
+	if err := os.WriteFile(seededDownload, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	savedReadDir := osReadDir
+	defer func() { osReadDir = savedReadDir }()
+	osReadDir = func(name string) ([]os.DirEntry, error) {
+		if name == filepath.Join(home, "Downloads") {
+			return []os.DirEntry{
+				fakeDirEntry{name: "talpa-installer-archive", dir: true},
+			}, nil
+		}
+		return nil, os.ErrNotExist
+	}
+
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: true}, Logger: logging.NewNoopLogger()}
+	res, err := NewService().Run(context.Background(), app, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, item := range res.Items {
+		if item.Path == targetDir {
+			t.Fatalf("unexpected directory artifact discovered in plan: %s", targetDir)
+		}
+		if item.Path == seededDownload && item.Result == "skipped" && !item.Selected {
+			// acceptable if environment marks missing seeded entries elsewhere; keep assertion focused on directory exclusion
+		}
+	}
+}
+
+func TestRunPlanMarksSeededDirectoryAsSkipped(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	seededDir := filepath.Join(home, "Downloads", "talpa-installer.sh")
+	if err := os.MkdirAll(seededDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	savedReadDir := osReadDir
+	defer func() { osReadDir = savedReadDir }()
+	osReadDir = func(name string) ([]os.DirEntry, error) { return nil, os.ErrNotExist }
+
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: true}, Logger: logging.NewNoopLogger()}
+	res, err := NewService().Run(context.Background(), app, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, item := range res.Items {
+		if item.Path == seededDir {
+			found = true
+			if item.Selected {
+				t.Fatalf("expected seeded directory item to be unselected")
+			}
+			if item.Result != "skipped" {
+				t.Fatalf("expected seeded directory item skipped, got %s", item.Result)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected seeded installer entry in plan for %s", seededDir)
+	}
+}
+
+func TestRunPlanMarksStatErrorAsItemError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	target := filepath.Join(home, "Downloads", "talpa-installer.sh")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	savedReadDir := osReadDir
+	savedStat := osStat
+	defer func() {
+		osReadDir = savedReadDir
+		osStat = savedStat
+	}()
+	osReadDir = func(name string) ([]os.DirEntry, error) { return nil, os.ErrNotExist }
+	osStat = func(name string) (os.FileInfo, error) {
+		if name == target {
+			return nil, os.ErrPermission
+		}
+		return nil, os.ErrNotExist
+	}
+
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: true}, Logger: logging.NewNoopLogger()}
+	res, err := NewService().Run(context.Background(), app, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, item := range res.Items {
+		if item.Path == target {
+			found = true
+			if item.Selected {
+				t.Fatalf("expected stat-error item to be unselected")
+			}
+			if item.Result != "error" {
+				t.Fatalf("expected stat-error item result error, got %s", item.Result)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected seeded stat-error target in plan result")
+	}
+}
+
+func TestRunApplySkipsDirectoryTarget(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	targetDir := filepath.Join(home, "Downloads", "talpa-installer-dir.run")
+	if err := os.MkdirAll(filepath.Dir(targetDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(targetDir, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	savedReadDir := osReadDir
+	savedStat := osStat
+	defer func() {
+		osReadDir = savedReadDir
+		osStat = savedStat
+	}()
+	osReadDir = func(name string) ([]os.DirEntry, error) {
+		if name == filepath.Join(home, "Downloads") {
+			return []os.DirEntry{fakeDirEntry{name: "talpa-installer-dir.run", dir: false}}, nil
+		}
+		return nil, os.ErrNotExist
+	}
+	statCount := 0
+	osStat = func(name string) (os.FileInfo, error) {
+		if name == targetDir {
+			statCount++
+			if statCount == 1 {
+				return fakeFileInfo{name: filepath.Base(targetDir), dir: false}, nil
+			}
+			return fakeFileInfo{name: filepath.Base(targetDir), dir: true}, nil
+		}
+		return savedStat(name)
+	}
+
+	logger := &captureInstallerLogger{}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Whitelist: []string{targetDir}, Logger: logger}
+	res, err := NewService().Run(context.Background(), app, Options{Apply: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, item := range res.Items {
+		if item.Path == targetDir {
+			found = true
+			if item.Result != "skipped" {
+				t.Fatalf("expected directory target skipped, got %s", item.Result)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected discovered directory target item")
+	}
+
+	logged := false
+	for _, e := range logger.entries {
+		if e.Path == targetDir {
+			logged = true
+			if e.Result != "skipped" {
+				t.Fatalf("expected directory skip log result, got %s", e.Result)
+			}
+			if e.Error != "installer artifact must be a file" {
+				t.Fatalf("unexpected directory skip reason: %q", e.Error)
+			}
+		}
+	}
+	if !logged {
+		t.Fatalf("expected log entry for directory target")
+	}
+}
+
+func TestRunApplyMarksStatErrorAsItemError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	target := filepath.Join(home, "Downloads", "talpa-installer.sh")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	savedReadDir := osReadDir
+	savedStat := osStat
+	defer func() {
+		osReadDir = savedReadDir
+		osStat = savedStat
+	}()
+	osReadDir = func(name string) ([]os.DirEntry, error) { return nil, os.ErrNotExist }
+	statCount := 0
+	osStat = func(name string) (os.FileInfo, error) {
+		if name == target {
+			statCount++
+			if statCount == 1 {
+				return fakeFileInfo{name: filepath.Base(target), dir: false}, nil
+			}
+			return nil, os.ErrPermission
+		}
+		return nil, os.ErrNotExist
+	}
+
+	logger := &captureInstallerLogger{}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Whitelist: []string{target}, Logger: logger}
+	res, err := NewService().Run(context.Background(), app, Options{Apply: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, item := range res.Items {
+		if item.Path == target {
+			found = true
+			if item.Result != "error" {
+				t.Fatalf("expected stat error item result, got %s", item.Result)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected seeded target in result")
+	}
+	if res.Summary.Errors == 0 {
+		t.Fatalf("expected summary errors > 0 for stat error")
+	}
+
+	logged := false
+	for _, e := range logger.entries {
+		if e.Path == target {
+			logged = true
+			if e.Result != "error" {
+				t.Fatalf("expected logged error result, got %s", e.Result)
+			}
+			if e.Error == "" {
+				t.Fatalf("expected logged error message for stat failure")
+			}
+		}
+	}
+	if !logged {
+		t.Fatalf("expected log entry for stat-error target")
+	}
+}
+
 func TestRunApplySkipsOnValidationFailure(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

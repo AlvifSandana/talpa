@@ -51,7 +51,18 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 
 	items := discoverInstallerArtifacts(home)
 	for i := range items {
-		if _, err := osStat(items[i].Path); errors.Is(err, os.ErrNotExist) {
+		fi, err := osStat(items[i].Path)
+		if errors.Is(err, os.ErrNotExist) {
+			items[i].Selected = false
+			items[i].Result = "skipped"
+			continue
+		}
+		if err != nil {
+			items[i].Selected = false
+			items[i].Result = "error"
+			continue
+		}
+		if fi != nil && fi.IsDir() {
 			items[i].Selected = false
 			items[i].Result = "skipped"
 		}
@@ -105,9 +116,29 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 					}
 					continue
 				}
-				if _, err := osStat(items[i].Path); errors.Is(err, os.ErrNotExist) {
+				fi, err := osStat(items[i].Path)
+				if errors.Is(err, os.ErrNotExist) {
 					items[i].Result = "skipped"
 					entry.Result = items[i].Result
+					if err := app.Logger.Log(ctx, entry); err != nil {
+						errCount++
+					}
+					continue
+				}
+				if err != nil {
+					items[i].Result = "error"
+					errCount++
+					entry.Result = items[i].Result
+					entry.Error = err.Error()
+					if err := app.Logger.Log(ctx, entry); err != nil {
+						errCount++
+					}
+					continue
+				}
+				if fi != nil && fi.IsDir() {
+					items[i].Result = "skipped"
+					entry.Result = items[i].Result
+					entry.Error = "installer artifact must be a file"
 					if err := app.Logger.Log(ctx, entry); err != nil {
 						errCount++
 					}
