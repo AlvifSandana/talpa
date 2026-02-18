@@ -27,6 +27,18 @@ var (
 	osReadDir          = os.ReadDir
 	safeDelete         = safety.SafeDelete
 	pathValidateSystem = common.ValidateSystemScopePath
+	installerRuleByExt = map[string]string{
+		".deb":      "installer.package.deb",
+		".rpm":      "installer.package.rpm",
+		".appimage": "installer.package.appimage",
+		".run":      "installer.package.run",
+		".zip":      "installer.package.zip",
+		".tar":      "installer.package.tar",
+		".gz":       "installer.package.gz",
+		".bz2":      "installer.package.bz2",
+		".xz":       "installer.package.xz",
+		".zst":      "installer.package.zst",
+	}
 )
 
 func NewService() Service { return Service{} }
@@ -312,19 +324,7 @@ func installerArtifactRuleID(name string) (string, bool) {
 		return "installer.package.tar.zst", true
 	}
 
-	fileExt := map[string]string{
-		".deb":      "installer.package.deb",
-		".rpm":      "installer.package.rpm",
-		".appimage": "installer.package.appimage",
-		".run":      "installer.package.run",
-		".zip":      "installer.package.zip",
-		".tar":      "installer.package.tar",
-		".gz":       "installer.package.gz",
-		".bz2":      "installer.package.bz2",
-		".xz":       "installer.package.xz",
-		".zst":      "installer.package.zst",
-	}
 	ext := filepath.Ext(lower)
-	rule, ok := fileExt[ext]
+	rule, ok := installerRuleByExt[ext]
 	return rule, ok
 }
