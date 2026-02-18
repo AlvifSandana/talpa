@@ -151,38 +151,6 @@ func discoverInstallerArtifacts(home string) []model.CandidateItem {
 		risk     model.RiskLevel
 	}
 
-	fileExt := map[string]string{
-		".deb":      "installer.package.deb",
-		".rpm":      "installer.package.rpm",
-		".appimage": "installer.package.appimage",
-		".run":      "installer.package.run",
-		".zip":      "installer.package.zip",
-		".tar":      "installer.package.tar",
-		".gz":       "installer.package.gz",
-		".bz2":      "installer.package.bz2",
-		".xz":       "installer.package.xz",
-		".zst":      "installer.package.zst",
-	}
-
-	isArchiveName := func(name string) (string, bool) {
-		lower := strings.ToLower(name)
-		if strings.HasSuffix(lower, ".tar.gz") || strings.HasSuffix(lower, ".tgz") {
-			return "installer.package.tar.gz", true
-		}
-		if strings.HasSuffix(lower, ".tar.bz2") {
-			return "installer.package.tar.bz2", true
-		}
-		if strings.HasSuffix(lower, ".tar.xz") {
-			return "installer.package.tar.xz", true
-		}
-		if strings.HasSuffix(lower, ".tar.zst") {
-			return "installer.package.tar.zst", true
-		}
-		ext := filepath.Ext(lower)
-		rule, ok := fileExt[ext]
-		return rule, ok
-	}
-
 	artifacts := []artifact{
 		{ruleID: "installer.download", path: filepath.Join(home, "Downloads", "talpa-installer.sh"), category: "installer_artifact", risk: model.RiskLow},
 		{ruleID: "installer.download.sig", path: filepath.Join(home, "Downloads", "talpa-installer.sh.sha256"), category: "installer_artifact", risk: model.RiskLow},
@@ -221,7 +189,7 @@ func discoverInstallerArtifacts(home string) []model.CandidateItem {
 			if !isTalpaInstallerFileName(name) {
 				continue
 			}
-			ruleID, ok := isArchiveName(name)
+			ruleID, ok := installerArtifactRuleID(name)
 			if !ok {
 				continue
 			}
@@ -271,7 +239,11 @@ func isAllowedInstallerDeletionPath(path, home string) bool {
 	for _, p := range allowedPrefixes {
 		if strings.HasPrefix(n, p) {
 			base := filepath.Base(n)
-			return isTalpaInstallerFileName(base)
+			if !isTalpaInstallerFileName(base) {
+				return false
+			}
+			_, ok := installerArtifactRuleID(base)
+			return ok
 		}
 	}
 	return false
@@ -304,9 +276,55 @@ func isTalpaInstallerFileName(name string) bool {
 	}
 	prefixes := []string{"talpa-installer", "talpa_installer", "talpainstaller"}
 	for _, p := range prefixes {
-		if strings.HasPrefix(lower, p) {
+		if !strings.HasPrefix(lower, p) {
+			continue
+		}
+		if len(lower) == len(p) {
+			return true
+		}
+		next := lower[len(p)]
+		if (next >= '0' && next <= '9') || next == '-' || next == '_' || next == '.' {
 			return true
 		}
 	}
 	return false
+}
+
+func installerArtifactRuleID(name string) (string, bool) {
+	if strings.TrimSpace(name) != name {
+		return "", false
+	}
+	lower := strings.ToLower(name)
+	if lower == "" {
+		return "", false
+	}
+
+	if strings.HasSuffix(lower, ".tar.gz") || strings.HasSuffix(lower, ".tgz") {
+		return "installer.package.tar.gz", true
+	}
+	if strings.HasSuffix(lower, ".tar.bz2") {
+		return "installer.package.tar.bz2", true
+	}
+	if strings.HasSuffix(lower, ".tar.xz") {
+		return "installer.package.tar.xz", true
+	}
+	if strings.HasSuffix(lower, ".tar.zst") {
+		return "installer.package.tar.zst", true
+	}
+
+	fileExt := map[string]string{
+		".deb":      "installer.package.deb",
+		".rpm":      "installer.package.rpm",
+		".appimage": "installer.package.appimage",
+		".run":      "installer.package.run",
+		".zip":      "installer.package.zip",
+		".tar":      "installer.package.tar",
+		".gz":       "installer.package.gz",
+		".bz2":      "installer.package.bz2",
+		".xz":       "installer.package.xz",
+		".zst":      "installer.package.zst",
+	}
+	ext := filepath.Ext(lower)
+	rule, ok := fileExt[ext]
+	return rule, ok
 }

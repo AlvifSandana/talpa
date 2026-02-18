@@ -300,16 +300,76 @@ func TestIsAllowedInstallerDeletionPath(t *testing.T) {
 		want bool
 	}{
 		{name: "allow seeded download script", path: "/home/tester/Downloads/talpa-installer.sh", want: true},
+		{name: "allow seeded download checksum", path: "/home/tester/Downloads/talpa-installer.sh.sha256", want: true},
 		{name: "allow prefixed download package", path: "/home/tester/Downloads/talpa-installer_1.0.0_amd64.deb", want: true},
+		{name: "deny prefixed unsupported extension", path: "/home/tester/Downloads/talpa-installer-report.txt", want: false},
 		{name: "deny non installer file", path: "/home/tester/Downloads/notes.zip", want: false},
+		{name: "allow seeded tmp exact", path: "/tmp/talpa-installer", want: true},
 		{name: "allow tmp installer", path: "/tmp/talpa-installer.run", want: true},
 		{name: "deny tmp random", path: "/tmp/random.run", want: false},
+		{name: "deny traversal outside allowed roots", path: "/home/tester/Downloads/../../etc/talpa-installer.deb", want: false},
+		{name: "deny leading whitespace filename", path: "/home/tester/Downloads/ talpa-installer.deb", want: false},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := isAllowedInstallerDeletionPath(tc.path, home); got != tc.want {
 				t.Fatalf("unexpected allow result for %q: got %v want %v", tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsTalpaInstallerFileName(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{name: "exact", in: "talpa-installer", want: true},
+		{name: "dash suffix", in: "talpa-installer-v1.2.3.tar.gz", want: true},
+		{name: "underscore suffix", in: "talpa_installer_latest.AppImage", want: true},
+		{name: "numeric suffix", in: "talpainstaller2.run", want: true},
+		{name: "dot suffix", in: "talpainstaller.pkg.tar.zst", want: true},
+		{name: "deny v-word continuation", in: "talpainstallervirus.zip", want: false},
+		{name: "deny word continuation", in: "talpainstallerdocs.zip", want: false},
+		{name: "deny unrelated", in: "talpa-notes.zip", want: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isTalpaInstallerFileName(tc.in); got != tc.want {
+				t.Fatalf("unexpected installer file match for %q: got %v want %v", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestInstallerArtifactRuleID(t *testing.T) {
+	tests := []struct {
+		name     string
+		in       string
+		wantID   string
+		wantOkay bool
+	}{
+		{name: "deb", in: "talpa-installer.deb", wantID: "installer.package.deb", wantOkay: true},
+		{name: "appimage case insensitive", in: "talpa-installer.AppImage", wantID: "installer.package.appimage", wantOkay: true},
+		{name: "tar.gz", in: "talpa-installer-v1.2.3.tar.gz", wantID: "installer.package.tar.gz", wantOkay: true},
+		{name: "tgz", in: "talpa-installer-v1.2.3.tgz", wantID: "installer.package.tar.gz", wantOkay: true},
+		{name: "tar.bz2", in: "talpa-installer-v1.2.3.tar.bz2", wantID: "installer.package.tar.bz2", wantOkay: true},
+		{name: "tar.xz", in: "talpa-installer-v1.2.3.tar.xz", wantID: "installer.package.tar.xz", wantOkay: true},
+		{name: "tar.zst", in: "talpa-installer-v1.2.3.tar.zst", wantID: "installer.package.tar.zst", wantOkay: true},
+		{name: "unsupported txt", in: "talpa-installer-report.txt", wantID: "", wantOkay: false},
+		{name: "deny leading whitespace", in: " talpa-installer.deb", wantID: "", wantOkay: false},
+		{name: "deny trailing whitespace", in: "talpa-installer.deb ", wantID: "", wantOkay: false},
+		{name: "empty", in: "", wantID: "", wantOkay: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotID, gotOK := installerArtifactRuleID(tc.in)
+			if gotOK != tc.wantOkay || gotID != tc.wantID {
+				t.Fatalf("unexpected rule id for %q: got (%q,%v) want (%q,%v)", tc.in, gotID, gotOK, tc.wantID, tc.wantOkay)
 			}
 		})
 	}
