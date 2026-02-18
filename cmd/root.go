@@ -53,6 +53,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&opts.DryRun, "dry-run", false, "Preview actions without modifying files")
 	rootCmd.PersistentFlags().BoolVar(&opts.Debug, "debug", false, "Enable debug output")
 	rootCmd.PersistentFlags().BoolVar(&opts.Yes, "yes", false, "Auto-confirm actions in non-interactive mode")
+	rootCmd.PersistentFlags().StringVar(&opts.Confirm, "confirm", "", "Second confirmation token for high-risk actions (must be HIGH-RISK)")
 	rootCmd.PersistentFlags().BoolVar(&opts.JSON, "json", false, "Output as JSON")
 	rootCmd.PersistentFlags().BoolVar(&opts.NoOpLog, "no-oplog", false, "Disable operation log")
 

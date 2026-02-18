@@ -1,6 +1,7 @@
 package filesystem
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -119,5 +120,19 @@ func TestWithinRoot(t *testing.T) {
 	}
 	if withinRoot("/ab", "/a") {
 		t.Fatalf("unexpected prefix-only match")
+	}
+}
+
+func TestScanFailsWhenMountMetadataUnavailableAndSkippingRequested(t *testing.T) {
+	root := t.TempDir()
+	original := readMountPointsFunc
+	readMountPointsFunc = func() (map[string]string, error) {
+		return nil, errors.New("mountinfo unavailable")
+	}
+	t.Cleanup(func() { readMountPointsFunc = original })
+
+	_, err := Scan(root, ScanOptions{SkipMountpoint: true, Timeout: time.Second})
+	if err == nil {
+		t.Fatalf("expected scan to fail when mount metadata unavailable and skip mountpoint requested")
 	}
 }

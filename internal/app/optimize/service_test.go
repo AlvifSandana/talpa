@@ -68,7 +68,7 @@ func TestRunApplyMarksPendingWithConfirmation(t *testing.T) {
 	checkRootFSReadOnly = func() bool { return false }
 	checkPackageManagerBusyFor = func(manager string) bool { return false }
 
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Logger: logging.NewNoopLogger()}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app, Options{Apply: true})
 	if err != nil {
 		t.Fatal(err)
@@ -114,7 +114,7 @@ func TestRunApplyCommandFailure(t *testing.T) {
 	checkRootFSReadOnly = func() bool { return false }
 	checkPackageManagerBusyFor = func(manager string) bool { return false }
 
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Logger: logging.NewNoopLogger()}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app, Options{Apply: true})
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +162,7 @@ func TestRunApplySkipsWhenNotRoot(t *testing.T) {
 	checkRootFSReadOnly = func() bool { return false }
 	checkPackageManagerBusyFor = func(manager string) bool { return false }
 
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Logger: logging.NewNoopLogger()}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app, Options{Apply: true})
 	if err != nil {
 		t.Fatal(err)
@@ -259,7 +259,7 @@ func TestRunApplySkipsWhenPreflightBlocked(t *testing.T) {
 	checkRootFSReadOnly = func() bool { return false }
 	checkPackageManagerBusyFor = func(manager string) bool { return false }
 
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Logger: logging.NewNoopLogger()}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app, Options{Apply: true})
 	if err != nil {
 		t.Fatal(err)

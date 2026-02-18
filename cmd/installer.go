@@ -11,7 +11,7 @@ var installerApply bool
 
 var installerCmd = &cobra.Command{
 	Use:   "installer",
-	Short: "Scaffold installer artifact cleanup",
+	Short: "Clean installer artifacts safely",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		app, err := common.FromCommand(cmd)
 		if err != nil {
@@ -27,5 +27,5 @@ var installerCmd = &cobra.Command{
 }
 
 func init() {
-	installerCmd.Flags().BoolVar(&installerApply, "apply", false, "Execute installer cleanup actions (requires --yes or --dry-run)")
+	installerCmd.Flags().BoolVar(&installerApply, "apply", false, "Execute installer cleanup actions (requires --yes --confirm HIGH-RISK or --dry-run)")
 }

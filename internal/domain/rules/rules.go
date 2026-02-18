@@ -33,6 +33,18 @@ func CleanRules(home string) []model.Rule {
 	}
 }
 
+func CleanSystemRules() []model.Rule {
+	return []model.Rule{
+		{ID: "clean.system.tmp", Command: "clean", Category: "system_tmp", Pattern: "/tmp", Risk: model.RiskMedium, RequiresRoot: true},
+		{ID: "clean.system.var_tmp", Command: "clean", Category: "system_tmp", Pattern: "/var/tmp", Risk: model.RiskMedium, RequiresRoot: true},
+		{ID: "clean.system.apt_cache", Command: "clean", Category: "system_cache", Pattern: "/var/cache/apt", Risk: model.RiskMedium, RequiresRoot: true},
+		{ID: "clean.system.dnf_cache", Command: "clean", Category: "system_cache", Pattern: "/var/cache/dnf", Risk: model.RiskMedium, RequiresRoot: true},
+		{ID: "clean.system.pacman_cache", Command: "clean", Category: "system_cache", Pattern: "/var/cache/pacman", Risk: model.RiskMedium, RequiresRoot: true},
+		{ID: "clean.system.zypper_cache", Command: "clean", Category: "system_cache", Pattern: "/var/cache/zypp", Risk: model.RiskMedium, RequiresRoot: true},
+		{ID: "clean.system.journal", Command: "clean", Category: "system_logs", Pattern: "/var/log/journal", Risk: model.RiskHigh, RequiresRoot: true},
+	}
+}
+
 func PurgeArtifactRules() []model.Rule {
 	return []model.Rule{
 		{ID: "purge.node_modules", Command: "purge", Category: "project_artifact", Pattern: "node_modules", Risk: model.RiskLow},
@@ -50,8 +62,11 @@ func PurgeArtifactRules() []model.Rule {
 	}
 }
 
-func ExistingCleanRules(home string) []model.Rule {
+func ExistingCleanRules(home string, includeSystem bool) []model.Rule {
 	all := CleanRules(home)
+	if includeSystem {
+		all = append(all, CleanSystemRules()...)
+	}
 	out := make([]model.Rule, 0, len(all))
 	for _, r := range all {
 		if st, err := os.Stat(r.Pattern); err == nil && st.IsDir() {

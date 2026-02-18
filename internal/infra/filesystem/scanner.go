@@ -12,10 +12,14 @@ import (
 	"time"
 )
 
+var readMountPointsFunc = readMountPoints
+
 type ScanItem struct {
 	Path         string
 	SizeBytes    int64
 	LastModified time.Time
+	Device       uint64
+	Inode        uint64
 }
 
 type ScanOptions struct {
@@ -46,7 +50,13 @@ func Scan(root string, opts ScanOptions) ([]ScanItem, error) {
 	rootAbs = filepath.Clean(rootAbs)
 
 	excludes := normalizePaths(opts.Excludes)
-	mounts := readMountPoints()
+	mounts, err := readMountPointsFunc()
+	if err != nil && (opts.SkipMountpoint || opts.SkipNetworkFS) {
+		return nil, err
+	}
+	if err != nil {
+		mounts = map[string]string{}
+	}
 	rootResolved := rootAbs
 	if resolved, err := filepath.EvalSymlinks(rootAbs); err == nil {
 		rootResolved = filepath.Clean(resolved)
@@ -176,6 +186,7 @@ func Scan(root string, opts ScanOptions) ([]ScanItem, error) {
 						if err != nil || info == nil {
 							continue
 						}
+						dev, ino := statIdentity(info)
 
 						if info.IsDir() {
 							push(path)
@@ -187,6 +198,8 @@ func Scan(root string, opts ScanOptions) ([]ScanItem, error) {
 							Path:         path,
 							SizeBytes:    info.Size(),
 							LastModified: info.ModTime().UTC(),
+							Device:       dev,
+							Inode:        ino,
 						})
 						itemsMu.Unlock()
 					}
@@ -257,14 +270,6 @@ func normalizePaths(paths []string) []string {
 		out = append(out, filepath.Clean(abs))
 	}
 	return out
-}
-
-func readMountPoints() map[string]string {
-	b, err := os.ReadFile("/proc/self/mountinfo")
-	if err != nil {
-		return map[string]string{}
-	}
-	return parseMountInfo(string(b))
 }
 
 func parseMountInfo(raw string) map[string]string {

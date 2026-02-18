@@ -98,7 +98,7 @@ func TestRunApplyExecutesWithConfirmation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Whitelist: []string{target}, Logger: logging.NewNoopLogger()}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Whitelist: []string{target}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app, Options{Apply: true})
 	if err != nil {
 		t.Fatal(err)
@@ -143,7 +143,7 @@ func TestRunApplyDeleteFailureSetsError(t *testing.T) {
 		return nil
 	}
 
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Whitelist: []string{target}, Logger: logging.NewNoopLogger()}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Whitelist: []string{target}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app, Options{Apply: true})
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +162,7 @@ func TestRunApplySkipsWhenPathMissing(t *testing.T) {
 
 	target := filepath.Join(home, "Downloads", "talpa-installer.sh")
 
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Whitelist: []string{target}, Logger: logging.NewNoopLogger()}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Whitelist: []string{target}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app, Options{Apply: true})
 	if err != nil {
 		t.Fatal(err)
@@ -333,7 +333,7 @@ func TestRunApplySkipsDirectoryTarget(t *testing.T) {
 	}
 
 	logger := &captureInstallerLogger{}
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Whitelist: []string{targetDir}, Logger: logger}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Whitelist: []string{targetDir}, Logger: logger}
 	res, err := NewService().Run(context.Background(), app, Options{Apply: true})
 	if err != nil {
 		t.Fatal(err)
@@ -400,7 +400,7 @@ func TestRunApplyMarksStatErrorAsItemError(t *testing.T) {
 	}
 
 	logger := &captureInstallerLogger{}
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Whitelist: []string{target}, Logger: logger}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Whitelist: []string{target}, Logger: logger}
 	res, err := NewService().Run(context.Background(), app, Options{Apply: true})
 	if err != nil {
 		t.Fatal(err)
@@ -463,7 +463,7 @@ func TestRunApplySkipsOnValidationFailure(t *testing.T) {
 		return nil
 	}
 
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Whitelist: []string{target}, Logger: logging.NewNoopLogger()}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Whitelist: []string{target}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app, Options{Apply: true})
 	if err != nil {
 		t.Fatal(err)
@@ -486,7 +486,7 @@ func TestRunApplyLogsUnselectedItemsAsSkipped(t *testing.T) {
 	osReadDir = func(name string) ([]os.DirEntry, error) { return nil, os.ErrNotExist }
 
 	logger := &captureInstallerLogger{}
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Logger: logger}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Logger: logger}
 	_, err := NewService().Run(context.Background(), app, Options{Apply: true})
 	if err != nil {
 		t.Fatal(err)

@@ -12,7 +12,7 @@ var uninstallTargets []string
 
 var uninstallCmd = &cobra.Command{
 	Use:   "uninstall",
-	Short: "Scaffold app uninstall workflow",
+	Short: "Uninstall app and Talpa-related leftovers safely",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		app, err := common.FromCommand(cmd)
 		if err != nil {
@@ -28,6 +28,6 @@ var uninstallCmd = &cobra.Command{
 }
 
 func init() {
-	uninstallCmd.Flags().BoolVar(&uninstallApply, "apply", false, "Execute uninstall actions (requires --yes or --dry-run)")
+	uninstallCmd.Flags().BoolVar(&uninstallApply, "apply", false, "Execute uninstall actions (requires --yes --confirm HIGH-RISK or --dry-run)")
 	uninstallCmd.Flags().StringSliceVar(&uninstallTargets, "target", nil, "Explicit uninstall target in backend:name format (backend: apt|dnf|pacman|zypper|snap|flatpak)")
 }

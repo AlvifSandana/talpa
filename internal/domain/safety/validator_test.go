@@ -50,3 +50,15 @@ func TestValidatePathRejectsSymlinkEscape(t *testing.T) {
 		t.Fatal("expected symlink escape error")
 	}
 }
+
+func TestValidatePathAllowsWhitelistedGlob(t *testing.T) {
+	root := t.TempDir()
+	p := filepath.Join(root, "cache", "a")
+	if err := os.MkdirAll(p, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := ValidatePath(p, nil, []string{filepath.Join(root, "cache", "*")})
+	if err != nil {
+		t.Fatalf("expected glob-whitelisted path to pass, got %v", err)
+	}
+}

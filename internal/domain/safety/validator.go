@@ -3,7 +3,6 @@ package safety
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -36,7 +35,7 @@ func ValidatePath(path string, allowedRoots []string, whitelist []string) error 
 			return errors.New("PATH_INVALID: control character")
 		}
 	}
-	if strings.Contains(path, "/../") {
+	if hasTraversalSegment(path) {
 		return errors.New("PATH_INVALID: traversal")
 	}
 
@@ -68,13 +67,29 @@ func ValidatePath(path string, allowedRoots []string, whitelist []string) error 
 }
 
 func SafeDelete(path string, allowedRoots []string, whitelist []string, dryRun bool) error {
+	return safeDelete(path, allowedRoots, whitelist, dryRun, 0, 0, false)
+}
+
+func SafeDeleteWithIdentity(path string, allowedRoots []string, whitelist []string, dryRun bool, expectedDev uint64, expectedIno uint64) error {
+	return safeDelete(path, allowedRoots, whitelist, dryRun, expectedDev, expectedIno, true)
+}
+
+func safeDelete(path string, allowedRoots []string, whitelist []string, dryRun bool, expectedDev uint64, expectedIno uint64, enforceIdentity bool) error {
 	if err := ValidatePath(path, allowedRoots, whitelist); err != nil {
 		return err
 	}
 	if dryRun {
 		return nil
 	}
-	return os.RemoveAll(path)
+	clean := filepath.Clean(path)
+	abs, err := filepath.Abs(clean)
+	if err != nil {
+		return err
+	}
+	if !enforceIdentity {
+		return secureRemoveAll(abs, nil)
+	}
+	return secureRemoveAll(abs, &entryIdentity{dev: expectedDev, ino: expectedIno})
 }
 
 func isBlocked(path string) bool {
@@ -90,12 +105,28 @@ func inAllowedRoots(path string, roots []string) bool {
 	if len(roots) == 0 {
 		return true
 	}
+	pathResolved, pathResolvedErr := filepath.EvalSymlinks(path)
 	for _, r := range roots {
 		abs, err := filepath.Abs(r)
 		if err != nil {
 			continue
 		}
-		if path == abs || strings.HasPrefix(path, abs+"/") {
+		if isWithinPath(path, abs) {
+			return true
+		}
+		if rootResolved, err := filepath.EvalSymlinks(abs); err == nil && pathResolvedErr == nil {
+			if isWithinPath(pathResolved, rootResolved) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func hasTraversalSegment(path string) bool {
+	normalized := strings.ReplaceAll(path, "\\", "/")
+	for _, seg := range strings.Split(normalized, "/") {
+		if seg == ".." {
 			return true
 		}
 	}
@@ -104,9 +135,28 @@ func inAllowedRoots(path string, roots []string) bool {
 
 func isWhitelisted(path string, whitelist []string) bool {
 	for _, w := range whitelist {
-		if path == w || strings.HasPrefix(path, w+"/") {
+		if strings.ContainsAny(w, "*?[") {
+			if ok, _ := filepath.Match(w, path); ok {
+				return true
+			}
+		}
+		if isWithinPath(path, w) {
 			return true
 		}
 	}
 	return false
+}
+
+func isWithinPath(path, root string) bool {
+	pathClean := filepath.Clean(path)
+	rootClean := filepath.Clean(root)
+	rel, err := filepath.Rel(rootClean, pathClean)
+	if err != nil {
+		return false
+	}
+	if rel == "." {
+		return true
+	}
+	up := ".." + string(filepath.Separator)
+	return rel != ".." && !strings.HasPrefix(rel, up)
 }

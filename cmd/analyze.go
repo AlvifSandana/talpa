@@ -15,6 +15,7 @@ var analyzeSort string
 var analyzeMinSize int64
 var analyzeQuery string
 var analyzeOnlyCandidates bool
+var analyzeAction string
 
 var analyzeCmd = &cobra.Command{
 	Use:   "analyze [path]",
@@ -39,6 +40,11 @@ var analyzeCmd = &cobra.Command{
 		default:
 			return fmt.Errorf("--sort must be one of: size, path, mtime")
 		}
+		switch analyzeAction {
+		case "inspect", "trash", "delete":
+		default:
+			return fmt.Errorf("--action must be one of: inspect, trash, delete")
+		}
 
 		root := ""
 		if len(args) == 1 {
@@ -53,6 +59,7 @@ var analyzeCmd = &cobra.Command{
 			MinSizeBytes:   analyzeMinSize,
 			Query:          analyzeQuery,
 			OnlyCandidates: analyzeOnlyCandidates,
+			Action:         analyzeAction,
 		})
 		if err != nil {
 			return err
@@ -68,4 +75,5 @@ func init() {
 	analyzeCmd.Flags().Int64Var(&analyzeMinSize, "min-size", 0, "Minimum item size in bytes")
 	analyzeCmd.Flags().StringVar(&analyzeQuery, "query", "", "Filter item paths by substring")
 	analyzeCmd.Flags().BoolVar(&analyzeOnlyCandidates, "only-candidates", false, "Show only cleanup candidates")
+	analyzeCmd.Flags().StringVar(&analyzeAction, "action", "inspect", "Action mode: inspect, trash, delete")
 }

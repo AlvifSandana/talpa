@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -76,6 +77,103 @@ func TestSortByMtime(t *testing.T) {
 	}
 	if res.Items[0].Path != newPath {
 		t.Fatalf("expected newest file first, got %s", res.Items[0].Path)
+	}
+}
+
+func TestRunDeleteActionRequiresHighRiskDoubleConfirm(t *testing.T) {
+	root := t.TempDir()
+	mustMkdir(t, filepath.Join(root, "project", "cache"))
+	mustWrite(t, filepath.Join(root, "project", "cache", "a.tmp"), 16)
+
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Logger: logging.NewNoopLogger()}
+	_, err := NewService().Run(context.Background(), app, root, Options{Depth: 4, Limit: 10, SortBy: "size", Action: "delete"})
+	if err == nil {
+		t.Fatalf("expected high-risk double confirmation error")
+	}
+}
+
+func TestRunDeleteActionUsesSafetyGate(t *testing.T) {
+	root := t.TempDir()
+	cacheDir := filepath.Join(root, "project", "cache")
+	mustMkdir(t, cacheDir)
+	target := filepath.Join(cacheDir, "a.tmp")
+	mustWrite(t, target, 16)
+
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Logger: logging.NewNoopLogger()}
+	res, err := NewService().Run(context.Background(), app, root, Options{Depth: 4, Limit: 10, SortBy: "size", Action: "delete"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Items) == 0 {
+		t.Fatalf("expected analyze items")
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("expected target to be deleted")
+	}
+}
+
+func TestRunActionDryRunReportsPlannedForMutatingActions(t *testing.T) {
+	root := t.TempDir()
+	mustMkdir(t, filepath.Join(root, "project", "cache"))
+	mustWrite(t, filepath.Join(root, "project", "cache", "a.tmp"), 16)
+
+	for _, action := range []string{"delete", "trash"} {
+		t.Run(action, func(t *testing.T) {
+			app := &common.AppContext{Options: common.GlobalOptions{DryRun: true}, Logger: logging.NewNoopLogger()}
+			res, err := NewService().Run(context.Background(), app, root, Options{Depth: 4, Limit: 10, SortBy: "size", Action: action})
+			if err != nil {
+				t.Fatal(err)
+			}
+			foundPlanned := false
+			for _, it := range res.Items {
+				if it.Selected {
+					if it.Result != "planned" {
+						t.Fatalf("expected selected item result planned for dry-run, got %q", it.Result)
+					}
+					foundPlanned = true
+				}
+			}
+			if !foundPlanned {
+				t.Fatalf("expected at least one selected item")
+			}
+		})
+	}
+}
+
+func TestRunTrashActionSkipsMissingDescendantAfterParentMoved(t *testing.T) {
+	root := t.TempDir()
+	parent := filepath.Join(root, "project", "cache")
+	child := filepath.Join(parent, "nested")
+	mustMkdir(t, child)
+	mustWrite(t, filepath.Join(child, "a.tmp"), 16)
+
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Logger: logging.NewNoopLogger()}
+	res, err := NewService().Run(context.Background(), app, root, Options{Depth: 6, Limit: 50, SortBy: "size", Action: "trash"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Summary.Errors != 0 {
+		t.Fatalf("expected no errors when descendant is already moved with parent, got %d", res.Summary.Errors)
+	}
+}
+
+func TestMoveToTrashRejectsSymlinkTrashDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink permissions and behavior differ on windows")
+	}
+	root := t.TempDir()
+	src := filepath.Join(root, "cache")
+	realTrash := filepath.Join(root, "real-trash")
+	symlinkTrash := filepath.Join(root, "link-trash")
+	mustMkdir(t, src)
+	mustMkdir(t, realTrash)
+	if err := os.Symlink(realTrash, symlinkTrash); err != nil {
+		t.Skipf("unable to create symlink: %v", err)
+	}
+
+	err := moveToTrash(src, symlinkTrash, []string{root}, nil, 0, 0)
+	if err == nil {
+		t.Fatalf("expected symlink trash dir to be rejected")
 	}
 }
 

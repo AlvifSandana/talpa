@@ -7,6 +7,8 @@ import (
 	"talpa/internal/app/common"
 )
 
+var cleanSystem bool
+
 var cleanCmd = &cobra.Command{
 	Use:   "clean",
 	Short: "Clean safe cache and temp files",
@@ -17,10 +19,14 @@ var cleanCmd = &cobra.Command{
 		}
 
 		svc := clean.NewService()
-		result, err := svc.Run(cmd.Context(), app)
+		result, err := svc.Run(cmd.Context(), app, clean.Options{System: cleanSystem})
 		if err != nil {
 			return err
 		}
 		return printResult(result)
 	},
+}
+
+func init() {
+	cleanCmd.Flags().BoolVar(&cleanSystem, "system", false, "Include opt-in system-level cleanup candidates")
 }

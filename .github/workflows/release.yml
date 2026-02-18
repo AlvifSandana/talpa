@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build linux amd64
+        run: GOOS=linux GOARCH=amd64 go build -o dist/talpa-linux-amd64 ./cmd/talpa
+
+      - name: Build linux arm64
+        run: GOOS=linux GOARCH=arm64 go build -o dist/talpa-linux-arm64 ./cmd/talpa
+
+      - name: Generate checksums
+        run: sha256sum dist/talpa-linux-amd64 dist/talpa-linux-arm64 > dist/SHA256SUMS
+
+      - name: Verify checksums
+        run: sha256sum -c dist/SHA256SUMS
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/talpa-linux-amd64
+            dist/talpa-linux-arm64
+            dist/SHA256SUMS

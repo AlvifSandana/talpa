@@ -14,6 +14,21 @@ func TestRequireConfirmationOrDryRun(t *testing.T) {
 	}
 }
 
+func TestRequireHighRiskConfirmationOrDryRun(t *testing.T) {
+	if err := RequireHighRiskConfirmationOrDryRun(GlobalOptions{DryRun: true}, "x"); err != nil {
+		t.Fatalf("unexpected error in dry-run: %v", err)
+	}
+	if err := RequireHighRiskConfirmationOrDryRun(GlobalOptions{Yes: true, Confirm: "HIGH-RISK"}, "x"); err != nil {
+		t.Fatalf("unexpected error with high-risk confirmation: %v", err)
+	}
+	if err := RequireHighRiskConfirmationOrDryRun(GlobalOptions{Yes: true}, "x"); err == nil {
+		t.Fatalf("expected double-confirmation error when --yes is set without --confirm")
+	}
+	if err := RequireHighRiskConfirmationOrDryRun(GlobalOptions{}, "x"); err == nil {
+		t.Fatalf("expected confirmation error")
+	}
+}
+
 func TestValidateSystemScopePath(t *testing.T) {
 	if err := ValidateSystemScopePath("/tmp/talpa-test", nil); err != nil {
 		t.Fatalf("expected /tmp path allowed with system scope: %v", err)

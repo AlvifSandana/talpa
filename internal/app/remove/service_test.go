@@ -54,7 +54,7 @@ func TestRunRemoveSuccess(t *testing.T) {
 		return os.Remove(name)
 	}
 
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Whitelist: []string{tmp}, Logger: logging.NewNoopLogger()}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Whitelist: []string{tmp}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app)
 	if err != nil {
 		t.Fatal(err)
@@ -75,7 +75,7 @@ func TestRunRemoveFailure(t *testing.T) {
 	osExecutable = func() (string, error) { return "/tmp/talpa", nil }
 	osRemove = func(name string) error { return errors.New("permission denied") }
 
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Whitelist: []string{"/tmp/talpa"}, Logger: logging.NewNoopLogger()}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Whitelist: []string{"/tmp/talpa"}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app)
 	if err != nil {
 		t.Fatal(err)
@@ -101,7 +101,7 @@ func TestRunIncrementsErrorsWhenLogFails(t *testing.T) {
 	osRemove = func(name string) error { return nil }
 
 	app := &common.AppContext{
-		Options:   common.GlobalOptions{DryRun: false, Yes: true},
+		Options:   common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"},
 		Whitelist: []string{tmp},
 		Logger:    alwaysFailRemoveLogger{},
 	}
@@ -131,7 +131,7 @@ func TestRunIncrementsErrorsForOperationAndLogFailure(t *testing.T) {
 	osRemove = func(name string) error { return errors.New("remove failed") }
 
 	app := &common.AppContext{
-		Options:   common.GlobalOptions{DryRun: false, Yes: true},
+		Options:   common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"},
 		Whitelist: []string{tmp},
 		Logger:    alwaysFailRemoveLogger{},
 	}

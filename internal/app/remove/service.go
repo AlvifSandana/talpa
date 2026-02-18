@@ -40,7 +40,7 @@ func (Service) Run(ctx context.Context, app *common.AppContext) (model.CommandRe
 	}
 
 	if !app.Options.DryRun {
-		if err := common.RequireConfirmationOrDryRun(app.Options, "remove"); err != nil {
+		if err := common.RequireHighRiskConfirmationOrDryRun(app.Options, "remove"); err != nil {
 			return model.CommandResult{}, err
 		}
 		if err := common.ValidateSystemScopePath(target, app.Whitelist); err != nil {

@@ -65,7 +65,7 @@ All commands return a common envelope:
 - `risk`: `low|medium|high`.
 - `selected`: boolean.
 - `requires_root`: boolean.
-- `result`: string. Current values include `planned`, `already-skipped`, `skipped`, `deleted`, `updated`, `optimized`, `uninstalled`, and `error`.
+- `result`: string. Current values include `planned`, `already-skipped`, `skipped`, `inspect`, `candidate`, `trashed`, `deleted`, `updated`, `optimized`, `uninstalled`, and `error`.
 
 ## Command Notes
 
@@ -81,11 +81,16 @@ Returns system metrics instead of item list:
   "metrics": {
     "cpu_usage": 0.12,
     "load_avg": [0.5, 0.7, 0.9],
+    "memory_total_bytes": 17179869184,
     "memory_used_bytes": 123456789,
+    "swap_used_bytes": 0,
+    "swap_total_bytes": 0,
     "disk_usage": [
       {"mount": "/", "used_bytes": 123, "total_bytes": 456}
     ],
-    "net": {"tx_bytes": 1, "rx_bytes": 2}
+    "disk_io": {"read_bytes": 1000, "write_bytes": 2000, "read_bps": 100, "write_bps": 200},
+    "net": {"tx_bytes": 1, "rx_bytes": 2, "tx_bps": 10, "rx_bps": 20},
+    "ip_addresses": ["192.168.1.10"]
   }
 }
 ```
@@ -123,7 +128,8 @@ Returns system metrics instead of item list:
 
 ### `analyze`
 - `items` represent tree nodes with aggregated sizes.
-- `result` can be `planned|deleted|trashed|skipped|error`.
+- `result` defaults to `inspect|candidate` and can become `trashed|deleted|skipped|error` when using action mode.
+- Use `--action inspect|trash|delete` to control analyze action flow.
 
 Example:
 ```json

@@ -71,7 +71,7 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 	errCount := 0
 
 	if opts.Apply {
-		if err := common.RequireConfirmationOrDryRun(app.Options, "optimize"); err != nil {
+		if err := common.RequireHighRiskConfirmationOrDryRun(app.Options, "optimize"); err != nil {
 			return model.CommandResult{}, err
 		}
 		if !app.Options.DryRun {

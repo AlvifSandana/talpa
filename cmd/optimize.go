@@ -11,7 +11,7 @@ var optimizeApply bool
 
 var optimizeCmd = &cobra.Command{
 	Use:   "optimize",
-	Short: "Scaffold safe optimization workflow",
+	Short: "Run safe optimization workflow",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		app, err := common.FromCommand(cmd)
 		if err != nil {
@@ -27,5 +27,5 @@ var optimizeCmd = &cobra.Command{
 }
 
 func init() {
-	optimizeCmd.Flags().BoolVar(&optimizeApply, "apply", false, "Execute optimization actions (requires --yes or --dry-run)")
+	optimizeCmd.Flags().BoolVar(&optimizeApply, "apply", false, "Execute optimization actions (requires --yes --confirm HIGH-RISK or --dry-run)")
 }

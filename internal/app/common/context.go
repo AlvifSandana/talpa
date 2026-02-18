@@ -10,6 +10,7 @@ type GlobalOptions struct {
 	DryRun         bool
 	Debug          bool
 	Yes            bool
+	Confirm        string
 	JSON           bool
 	NoOpLog        bool
 	StatusTop      int

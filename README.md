@@ -9,7 +9,7 @@ Linux maintenance workflows are often fragmented across many tools. Talpa unifie
 
 ### MVP (v0.x)
 - `talpa clean` — safe cache/log/temp cleanup
-- `talpa analyze` — interactive disk explorer
+- `talpa analyze` — disk inspection with action mode (`inspect|trash|delete`)
 - `talpa purge` — remove project build artifacts
 - `talpa status` — real-time system metrics
 - `talpa completion`, `talpa update`, `talpa remove`
@@ -24,14 +24,14 @@ Linux maintenance workflows are often fragmented across many tools. Talpa unifie
 - Dry-run support: `--dry-run`
 - Strict path validation and blocked critical paths
 - Symlink traversal protection
-- Layered confirmations for destructive actions
+- Layered confirmations for destructive actions (`--yes`, and `--confirm HIGH-RISK` for high-risk apply flows)
 - Local JSONL operation audit logs
 - No telemetry by default
 
-## Planned Installation
-Release installation script and binaries will be published in GitHub Releases.
+## Installation
+Release binaries are published via GitHub Releases with SHA256 checksums.
 
-Example (planned):
+Example installer flow (release process):
 ```bash
 curl -fsSL https://<release-url>/install.sh | bash
 ```
@@ -68,6 +68,10 @@ Global flags:
 - Arch Linux
 - openSUSE
 - Architectures: amd64, arm64
+
+Current platform note:
+- `talpa analyze --action trash` is supported on Unix platforms.
+- On non-Unix platforms, trash action uses a pragmatic best-effort rename fallback with reduced safety guarantees compared to Unix fd-based hardening.
 
 ## Roadmap
 - v0.x (MVP): clean, analyze, purge, status + safety core

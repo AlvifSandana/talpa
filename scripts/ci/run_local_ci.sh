@@ -26,4 +26,7 @@ bash scripts/ci/smoke_json.sh
 echo "[local-ci] smoke negative"
 bash scripts/ci/smoke_negative.sh
 
+echo "[local-ci] schema sync"
+bash scripts/ci/check_json_schema_sync.sh
+
 echo "[local-ci] completed"

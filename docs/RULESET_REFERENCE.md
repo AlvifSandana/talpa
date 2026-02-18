@@ -21,6 +21,15 @@ This document describes built-in rule categories used for matching cleanup candi
 - Journal vacuum (systemd-journald)
 - `/tmp` and `/var/tmp` with safety rules
 
+Implemented paths (opt-in via `talpa clean --system`):
+- `/tmp`
+- `/var/tmp`
+- `/var/cache/apt`
+- `/var/cache/dnf`
+- `/var/cache/pacman`
+- `/var/cache/zypp`
+- `/var/log/journal`
+
 ## Purge Rules (Project Artifacts)
 - Node: `node_modules`, `.next`, `dist`, `build`
 - Rust: `target`

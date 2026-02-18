@@ -16,7 +16,10 @@
       0.22,
       0.33
     ],
+    "memory_total_bytes": 8192,
     "memory_used_bytes": 4096,
+    "swap_used_bytes": 1024,
+    "swap_total_bytes": 2048,
     "disk_usage": [
       {
         "mount": "/",
@@ -24,10 +27,21 @@
         "total_bytes": 8192
       }
     ],
+    "disk_io": {
+      "read_bytes": 500,
+      "write_bytes": 700,
+      "read_bps": 50,
+      "write_bps": 70
+    },
     "net": {
       "tx_bytes": 111,
-      "rx_bytes": 222
+      "rx_bytes": 222,
+      "tx_bps": 11,
+      "rx_bps": 22
     },
+    "ip_addresses": [
+      "10.0.0.1"
+    ],
     "top_processes": [
       {
         "pid": 101,

@@ -89,7 +89,7 @@ func TestRunApplyExecutesWithConfirmation(t *testing.T) {
 	defer func() { osExecutable = savedExe }()
 	osExecutable = func() (string, error) { return binary, nil }
 
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Whitelist: []string{binary}, Logger: logging.NewNoopLogger()}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Whitelist: []string{binary}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app, Options{Apply: true})
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +136,7 @@ func TestRunApplyDeleteFailureSetsError(t *testing.T) {
 		return nil
 	}
 
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Whitelist: []string{binary}, Logger: logging.NewNoopLogger()}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Whitelist: []string{binary}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app, Options{Apply: true})
 	if err != nil {
 		t.Fatal(err)
@@ -155,7 +155,7 @@ func TestRunApplySkipsWhenPathMissing(t *testing.T) {
 	defer func() { osExecutable = savedExe }()
 	osExecutable = func() (string, error) { return binary, nil }
 
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Whitelist: []string{binary}, Logger: logging.NewNoopLogger()}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Whitelist: []string{binary}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app, Options{Apply: true})
 	if err != nil {
 		t.Fatal(err)
@@ -190,7 +190,7 @@ func TestRunApplySkipsOnValidationFailure(t *testing.T) {
 		return nil
 	}
 
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Whitelist: []string{binary}, Logger: logging.NewNoopLogger()}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Whitelist: []string{binary}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app, Options{Apply: true})
 	if err != nil {
 		t.Fatal(err)
@@ -231,7 +231,7 @@ func TestRunApplyExecutesAptTarget(t *testing.T) {
 	absPath = func(path string) (string, error) { return path, nil }
 	resolveExec = func(name string) (string, error) { return "/usr/bin/" + name, nil }
 
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Logger: logging.NewNoopLogger()}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app, Options{Apply: true, Targets: []string{"apt:vim"}})
 	if err != nil {
 		t.Fatal(err)
@@ -272,7 +272,7 @@ func TestRunApplySkipsRootRequiredTargetWhenNotRoot(t *testing.T) {
 	getEUID = func() int { return 1000 }
 	resolveExec = func(name string) (string, error) { return "/usr/bin/" + name, nil }
 
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Logger: logging.NewNoopLogger()}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app, Options{Apply: true, Targets: []string{"snap:code"}})
 	if err != nil {
 		t.Fatal(err)
@@ -413,7 +413,7 @@ func TestRunApplyTargetCommandFailureSetsError(t *testing.T) {
 	absPath = func(path string) (string, error) { return path, nil }
 	resolveExec = func(name string) (string, error) { return "/usr/bin/" + name, nil }
 
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Logger: logging.NewNoopLogger()}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app, Options{Apply: true, Targets: []string{"zypper:foo"}})
 	if err != nil {
 		t.Fatal(err)
@@ -538,7 +538,7 @@ func TestRunApplySkipsUnavailableBackendTarget(t *testing.T) {
 		return "/usr/bin/" + name, nil
 	}
 
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Logger: logging.NewNoopLogger()}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app, Options{Apply: true, Targets: []string{"zypper:foo"}})
 	if err != nil {
 		t.Fatal(err)
@@ -571,7 +571,7 @@ func TestRunApplyLogsUnselectedItemsAsSkipped(t *testing.T) {
 	}
 
 	logger := &captureUninstallLogger{}
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Logger: logger}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Logger: logger}
 	_, err := NewService().Run(context.Background(), app, Options{Apply: true, Targets: []string{"apt:vim"}})
 	if err != nil {
 		t.Fatal(err)
@@ -664,7 +664,7 @@ func TestRunApplyMarksLocalStatErrorAsItemError(t *testing.T) {
 	}
 
 	logger := &captureUninstallLogger{}
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Whitelist: []string{binary}, Logger: logger}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Whitelist: []string{binary}, Logger: logger}
 	res, err := NewService().Run(context.Background(), app, Options{Apply: true})
 	if err != nil {
 		t.Fatal(err)
@@ -729,7 +729,7 @@ func TestRunApplyCountsPlanDetectedStatError(t *testing.T) {
 	}
 
 	logger := &captureUninstallLogger{}
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Whitelist: []string{binary}, Logger: logger}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Whitelist: []string{binary}, Logger: logger}
 	res, err := NewService().Run(context.Background(), app, Options{Apply: true})
 	if err != nil {
 		t.Fatal(err)

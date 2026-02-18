@@ -6,10 +6,15 @@
 
 ## Release Steps
 1. Run full test suite (unit + integration + golden JSON).
+2. Run schema sync gate (`scripts/ci/check_json_schema_sync.sh`).
 2. Build binaries for target architectures.
 3. Generate SHA256 checksums for each artifact.
 4. Publish GitHub Release with release notes and checksums.
 5. Update installer script to point to latest release.
+
+Reference workflows/scripts:
+- `.github/workflows/release.yml`
+- `scripts/ci/release_dry_run.sh`
 
 ## CI Container Digest Rotation
 Best-effort distro CI jobs use pinned container image digests for reproducibility.
@@ -42,6 +47,14 @@ Operational notes:
 ## Verification
 - Installer script must verify SHA256.
 - All downloads must be via HTTPS.
+- Release dry-run must pass checksum verification locally before publish.
+
+## Temporary Security Exception (Current Cycle)
+- Scope: `analyze --action trash` path safety hardening is significantly improved, but not yet at full adversarial TOCTOU-proof level.
+- Platform behavior: Unix uses fd-based/no-follow flow; non-Unix trash action uses pragmatic rename fallback with reduced safety guarantees.
+- Risk acceptance: approved for Linux-first/local trusted-user usage in this cycle.
+- Required release note line: mention limitation explicitly and mark deeper hardening as next-cycle follow-up.
+- Exit criteria to remove exception: security gate passes strict TOCTOU review without caveat.
 
 ## Rollback
 - If release is broken, publish a patch release and update installer to latest stable.

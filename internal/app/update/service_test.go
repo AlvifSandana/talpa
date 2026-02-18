@@ -54,7 +54,7 @@ func TestRunSkipsWhenSourceEqualsTarget(t *testing.T) {
 		return errors.New("should not copy")
 	}
 
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Whitelist: []string{tmp}, Logger: logging.NewNoopLogger()}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Whitelist: []string{tmp}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app)
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +78,7 @@ func TestRunUpdateCopyFailure(t *testing.T) {
 	osMkdirAll = func(path string, perm os.FileMode) error { return nil }
 	doCopyFileSafe = func(src, dst string) error { return errors.New("copy failed") }
 
-	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true}, Whitelist: []string{"/usr/local/bin/talpa"}, Logger: logging.NewNoopLogger()}
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"}, Whitelist: []string{"/usr/local/bin/talpa"}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app)
 	if err != nil {
 		t.Fatal(err)
@@ -103,7 +103,7 @@ func TestRunIncrementsErrorsWhenLogFails(t *testing.T) {
 	doCopyFileSafe = func(src, dst string) error { return nil }
 
 	app := &common.AppContext{
-		Options:   common.GlobalOptions{DryRun: false, Yes: true},
+		Options:   common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"},
 		Whitelist: []string{"/usr/local/bin/talpa"},
 		Logger:    alwaysFailUpdateLogger{},
 	}
@@ -132,7 +132,7 @@ func TestRunIncrementsErrorsForOperationAndLogFailure(t *testing.T) {
 	doCopyFileSafe = func(src, dst string) error { return errors.New("copy failed") }
 
 	app := &common.AppContext{
-		Options:   common.GlobalOptions{DryRun: false, Yes: true},
+		Options:   common.GlobalOptions{DryRun: false, Yes: true, Confirm: "HIGH-RISK"},
 		Whitelist: []string{"/usr/local/bin/talpa"},
 		Logger:    alwaysFailUpdateLogger{},
 	}

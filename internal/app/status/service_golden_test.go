@@ -18,12 +18,21 @@ import (
 func TestRunDryRunGoldenJSON(t *testing.T) {
 	svc := Service{readers: statusReaders{
 		loadAvg: func() [3]float64 { return [3]float64{0.11, 0.22, 0.33} },
-		memory:  func() uint64 { return 4096 },
+		memory: func() MemoryMetric {
+			return MemoryMetric{UsedBytes: 4096, TotalBytes: 8192, SwapUsed: 1024, SwapTotal: 2048}
+		},
 		diskUsage: func(path string) DiskMetric {
 			return DiskMetric{Mount: path, UsedBytes: 2048, TotalBytes: 8192}
 		},
-		net:      func() NetMetric { return NetMetric{TXBytes: 111, RXBytes: 222} },
+		diskUsageN: func(limit int) []DiskMetric {
+			return []DiskMetric{{Mount: "/", UsedBytes: 2048, TotalBytes: 8192}}
+		},
+		diskIO: func() DiskIOMetric {
+			return DiskIOMetric{ReadBytes: 500, WriteBytes: 700, ReadBPS: 50, WriteBPS: 70}
+		},
+		net:      func() NetMetric { return NetMetric{TXBytes: 111, RXBytes: 222, TXBPS: 11, RXBPS: 22} },
 		cpuUsage: func() float64 { return 0.42 },
+		ipAddrs:  func() []string { return []string{"10.0.0.1"} },
 		topProcess: func(limit int) []system.ProcessStat {
 			return []system.ProcessStat{
 				{PID: 101, Command: "/usr/bin/vim", CPUPercent: 1.5, MemBytes: 1024},
@@ -73,6 +82,38 @@ func TestRunWithPartialReadersFallsBackToDefaults(t *testing.T) {
 	}
 	if metrics.LoadAvg != [3]float64{9.9, 8.8, 7.7} {
 		t.Fatalf("expected overridden load avg, got %#v", metrics.LoadAvg)
+	}
+}
+
+func TestRunUsesDiskUsageOverrideWhenDiskUsageNNotProvided(t *testing.T) {
+	svc := Service{readers: statusReaders{
+		loadAvg: func() [3]float64 { return [3]float64{0, 0, 0} },
+		memory: func() MemoryMetric {
+			return MemoryMetric{UsedBytes: 1, TotalBytes: 2}
+		},
+		diskUsage: func(path string) DiskMetric {
+			return DiskMetric{Mount: path, UsedBytes: 123, TotalBytes: 456}
+		},
+		diskIO:   func() DiskIOMetric { return DiskIOMetric{ReadBytes: 1, WriteBytes: 2, ReadBPS: 3, WriteBPS: 4} },
+		net:      func() NetMetric { return NetMetric{TXBytes: 5, RXBytes: 6, TXBPS: 7, RXBPS: 8} },
+		cpuUsage: func() float64 { return 0.1 },
+		topProcess: func(limit int) []system.ProcessStat {
+			return nil
+		},
+	}}
+
+	app := &common.AppContext{Options: common.GlobalOptions{DryRun: true, StatusTop: 1}, Logger: logging.NewNoopLogger()}
+	res, err := svc.Run(context.Background(), app)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	metrics, ok := res.Metrics.(Metrics)
+	if !ok {
+		t.Fatalf("expected status metrics type, got %T", res.Metrics)
+	}
+	if len(metrics.DiskUsage) != 1 || metrics.DiskUsage[0].UsedBytes != 123 {
+		t.Fatalf("expected diskUsage override to be honored, got %#v", metrics.DiskUsage)
 	}
 }
 
