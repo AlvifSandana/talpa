@@ -5,7 +5,7 @@
   "duration_ms": 0,
   "dry_run": true,
   "summary": {
-    "items_total": 4,
+    "items_total": 8,
     "items_selected": 2,
     "estimated_freed_bytes": 0,
     "errors": 0
@@ -51,6 +51,54 @@
       "id": "optimize-zypper",
       "rule_id": "optimize.zypper.clean",
       "path": "zypper",
+      "size_bytes": 0,
+      "last_modified": "2000-01-01T00:00:00Z",
+      "category": "optimization",
+      "risk": "medium",
+      "selected": false,
+      "requires_root": true,
+      "result": "skipped"
+    },
+    {
+      "id": "optimize-journal",
+      "rule_id": "optimize.journal.vacuum",
+      "path": "journalctl",
+      "size_bytes": 0,
+      "last_modified": "2000-01-01T00:00:00Z",
+      "category": "optimization",
+      "risk": "medium",
+      "selected": false,
+      "requires_root": true,
+      "result": "skipped"
+    },
+    {
+      "id": "optimize-fontcache",
+      "rule_id": "optimize.font.cache",
+      "path": "fc-cache",
+      "size_bytes": 0,
+      "last_modified": "2000-01-01T00:00:00Z",
+      "category": "optimization",
+      "risk": "medium",
+      "selected": false,
+      "requires_root": true,
+      "result": "skipped"
+    },
+    {
+      "id": "optimize-mime",
+      "rule_id": "optimize.mime.database",
+      "path": "update-mime-database",
+      "size_bytes": 0,
+      "last_modified": "2000-01-01T00:00:00Z",
+      "category": "optimization",
+      "risk": "medium",
+      "selected": false,
+      "requires_root": true,
+      "result": "skipped"
+    },
+    {
+      "id": "optimize-ldconfig",
+      "rule_id": "optimize.ldconfig",
+      "path": "ldconfig",
       "size_bytes": 0,
       "last_modified": "2000-01-01T00:00:00Z",
       "category": "optimization",

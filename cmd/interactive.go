@@ -30,6 +30,11 @@ func newMenuModel() menuModel {
 			{Title: "Analyze disk", Description: "Inspect disk usage by path", Args: []string{"analyze"}},
 			{Title: "Purge projects (dry run)", Description: "Preview build artifact cleanup", Args: []string{"purge", "--dry-run"}},
 			{Title: "Status", Description: "Show current system metrics", Args: []string{"status"}},
+			{Title: "Optimize (dry run)", Description: "Preview safe optimization actions", Args: []string{"optimize", "--dry-run"}},
+			{Title: "Uninstall (dry run)", Description: "Preview uninstall and cleanup plan", Args: []string{"uninstall", "--dry-run"}},
+			{Title: "Installer cleanup (dry run)", Description: "Preview installer artifact cleanup", Args: []string{"installer", "--dry-run"}},
+			{Title: "Update (dry run)", Description: "Preview self-update operation", Args: []string{"update", "--dry-run"}},
+			{Title: "Remove (dry run)", Description: "Preview self-remove operation", Args: []string{"remove", "--dry-run"}},
 			{Title: "Exit", Description: "Close interactive mode", Exit: true},
 		},
 	}

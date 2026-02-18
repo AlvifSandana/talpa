@@ -2,11 +2,13 @@ package optimize
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"talpa/internal/app/common"
@@ -20,15 +22,18 @@ type Options struct {
 }
 
 type optimizeAdapter struct {
-	ID      string
-	RuleID  string
-	Name    string
-	Command []string
+	ID           string
+	RuleID       string
+	Name         string
+	Command      []string
+	RequiresRoot bool
 }
 
 var (
 	lookPath                   = exec.LookPath
 	absPath                    = filepath.Abs
+	evalSymlinks               = filepath.EvalSymlinks
+	osStat                     = os.Stat
 	runCmd                     = runCommand
 	getEUID                    = os.Geteuid
 	checkLowBattery            = isLowBattery
@@ -44,17 +49,14 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 	items := make([]model.CandidateItem, 0, len(adapters))
 	for i := range adapters {
 		a := adapters[i]
-		item := newPlanItem(a.ID, a.RuleID, a.Command[0], "optimization", model.RiskMedium, true)
-		resolved, err := lookPath(a.Command[0])
+		item := newPlanItem(a.ID, a.RuleID, a.Command[0], "optimization", model.RiskMedium, a.RequiresRoot)
+		resolved, err := resolveTrustedExecutable(a.Command[0])
 		if err != nil {
 			item.Selected = false
 			item.Result = "skipped"
-		} else if absolute, err := absPath(resolved); err != nil {
-			item.Selected = false
-			item.Result = "skipped"
 		} else {
-			adapters[i].Command[0] = absolute
-			item.Path = absolute
+			adapters[i].Command[0] = resolved
+			item.Path = resolved
 		}
 		items = append(items, item)
 	}
@@ -92,22 +94,22 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 					DryRun:    false,
 				}
 
-				if notRoot {
-					items[i].Result = "skipped"
-					entry.Result = items[i].Result
-					entry.Error = "requires root"
-					if err := app.Logger.Log(ctx, entry); err != nil {
-						errCount++
-					}
-					continue
-				}
-
 				adapter, ok := adapterForRuleID(items[i].RuleID, adapters)
 				if !ok || len(adapter.Command) == 0 {
 					items[i].Result = "error"
 					errCount++
 					entry.Result = items[i].Result
 					entry.Error = "missing adapter command"
+					if err := app.Logger.Log(ctx, entry); err != nil {
+						errCount++
+					}
+					continue
+				}
+
+				if adapter.RequiresRoot && notRoot {
+					items[i].Result = "skipped"
+					entry.Result = items[i].Result
+					entry.Error = "requires root"
 					if err := app.Logger.Log(ctx, entry); err != nil {
 						errCount++
 					}
@@ -160,10 +162,14 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 
 func optimizeAdapters() []optimizeAdapter {
 	return []optimizeAdapter{
-		{ID: "optimize-apt", RuleID: "optimize.apt.clean", Name: "apt", Command: []string{"apt-get", "clean"}},
-		{ID: "optimize-dnf", RuleID: "optimize.dnf.clean", Name: "dnf", Command: []string{"dnf", "clean", "all"}},
-		{ID: "optimize-pacman", RuleID: "optimize.pacman.clean", Name: "pacman", Command: []string{"pacman", "-Scc", "--noconfirm"}},
-		{ID: "optimize-zypper", RuleID: "optimize.zypper.clean", Name: "zypper", Command: []string{"zypper", "clean", "--all"}},
+		{ID: "optimize-apt", RuleID: "optimize.apt.clean", Name: "apt", Command: []string{"apt-get", "clean"}, RequiresRoot: true},
+		{ID: "optimize-dnf", RuleID: "optimize.dnf.clean", Name: "dnf", Command: []string{"dnf", "clean", "all"}, RequiresRoot: true},
+		{ID: "optimize-pacman", RuleID: "optimize.pacman.clean", Name: "pacman", Command: []string{"pacman", "-Scc", "--noconfirm"}, RequiresRoot: true},
+		{ID: "optimize-zypper", RuleID: "optimize.zypper.clean", Name: "zypper", Command: []string{"zypper", "clean", "--all"}, RequiresRoot: true},
+		{ID: "optimize-journal", RuleID: "optimize.journal.vacuum", Name: "journalctl", Command: []string{"journalctl", "--vacuum-time=14d"}, RequiresRoot: true},
+		{ID: "optimize-fontcache", RuleID: "optimize.font.cache", Name: "fc-cache", Command: []string{"fc-cache", "-r"}, RequiresRoot: true},
+		{ID: "optimize-mime", RuleID: "optimize.mime.database", Name: "update-mime-database", Command: []string{"update-mime-database", "/usr/share/mime"}, RequiresRoot: true},
+		{ID: "optimize-ldconfig", RuleID: "optimize.ldconfig", Name: "ldconfig", Command: []string{"ldconfig"}, RequiresRoot: true},
 	}
 }
 
@@ -177,10 +183,87 @@ func adapterForRuleID(ruleID string, adapters []optimizeAdapter) (optimizeAdapte
 }
 
 func runCommand(ctx context.Context, name string, args ...string) error {
+	abs, err := absPath(name)
+	if err != nil {
+		return err
+	}
+	resolved, err := evalSymlinks(abs)
+	if err != nil {
+		return fmt.Errorf("cannot resolve executable symlink: %w", err)
+	}
+	if !isTrustedExecutablePath(resolved) {
+		return fmt.Errorf("untrusted executable path: %s", resolved)
+	}
+	if err := validateTrustedExecutableFile(resolved); err != nil {
+		return err
+	}
 	cmdCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(cmdCtx, name, args...)
+	cmd := exec.CommandContext(cmdCtx, resolved, args...)
 	return cmd.Run()
+}
+
+func resolveTrustedExecutable(name string) (string, error) {
+	resolved, err := lookPath(name)
+	if err != nil {
+		return "", err
+	}
+	abs, err := absPath(resolved)
+	if err != nil {
+		return "", err
+	}
+	if !isTrustedExecutablePath(abs) {
+		return "", fmt.Errorf("untrusted executable path: %s", abs)
+	}
+	resolvedPath, err := evalSymlinks(abs)
+	if err != nil {
+		return "", fmt.Errorf("cannot resolve executable symlink: %w", err)
+	}
+	if !isTrustedExecutablePath(resolvedPath) {
+		return "", fmt.Errorf("untrusted executable path: %s", resolvedPath)
+	}
+	abs = resolvedPath
+	if err := validateTrustedExecutableFile(abs); err != nil {
+		return "", err
+	}
+	return abs, nil
+}
+
+func validateTrustedExecutableFile(path string) error {
+	fi, err := osStat(path)
+	if err != nil {
+		return err
+	}
+	if fi.Mode().Perm()&0o022 != 0 {
+		return fmt.Errorf("untrusted executable permissions: %s", path)
+	}
+	stat, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("cannot verify executable owner: %s", path)
+	}
+	if stat.Uid != 0 {
+		return fmt.Errorf("untrusted executable owner: %s", path)
+	}
+	return nil
+}
+
+func isTrustedExecutablePath(path string) bool {
+	n := filepath.Clean(path)
+	trustedPrefixes := []string{
+		"/usr/bin/",
+		"/usr/sbin/",
+		"/bin/",
+		"/sbin/",
+		"/usr/local/bin/",
+		"/usr/local/sbin/",
+		"/snap/bin/",
+	}
+	for _, p := range trustedPrefixes {
+		if strings.HasPrefix(n, p) {
+			return true
+		}
+	}
+	return false
 }
 
 func optimizeGlobalPreflightReason() string {

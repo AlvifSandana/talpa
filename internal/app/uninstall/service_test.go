@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"syscall"
 	"testing"
 	"time"
 
@@ -588,3 +589,259 @@ func TestRunApplyLogsUnselectedItemsAsSkipped(t *testing.T) {
 		}
 	}
 }
+
+func TestDiscoverUninstallArtifactsFindsDesktopAndLeftovers(t *testing.T) {
+	home := t.TempDir()
+	entries := map[string][]os.DirEntry{
+		filepath.Join(home, ".local", "share", "applications"): {
+			fakeDirEntry{name: "talpa.desktop"},
+			fakeDirEntry{name: "other.desktop"},
+		},
+		filepath.Join(home, ".local", "share"): {
+			fakeDirEntry{name: "talpa-session"},
+			fakeDirEntry{name: "notes"},
+		},
+		filepath.Join(home, ".local", "state"): {
+			fakeDirEntry{name: "talpa.log"},
+		},
+		filepath.Join(home, ".config"): {
+			fakeDirEntry{name: "talpa-profile"},
+		},
+		filepath.Join(home, ".cache"): {
+			fakeDirEntry{name: "talpa-temp"},
+		},
+	}
+
+	savedReadDir := osReadDir
+	defer func() { osReadDir = savedReadDir }()
+	osReadDir = func(name string) ([]os.DirEntry, error) {
+		if v, ok := entries[name]; ok {
+			return v, nil
+		}
+		return nil, os.ErrNotExist
+	}
+
+	items := discoverUninstallArtifacts(home, 5)
+	if len(items) != 5 {
+		t.Fatalf("expected 5 discovered artifacts, got %d", len(items))
+	}
+
+	rules := make(map[string]int)
+	for _, it := range items {
+		rules[it.RuleID]++
+	}
+	if rules["uninstall.desktop.user"] != 1 {
+		t.Fatalf("expected 1 desktop artifact, got %d", rules["uninstall.desktop.user"])
+	}
+	if rules["uninstall.leftover"] != 4 {
+		t.Fatalf("expected 4 leftover artifacts, got %d", rules["uninstall.leftover"])
+	}
+}
+
+func TestIsTalpaLeftoverName(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{name: "exact talpa", in: "talpa", want: true},
+		{name: "dash prefix", in: "talpa-cache", want: true},
+		{name: "underscore prefix", in: "talpa_state", want: true},
+		{name: "dot prefix", in: "talpa.log", want: true},
+		{name: "substring only", in: "my-talpa", want: false},
+		{name: "unrelated", in: "notes", want: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isTalpaLeftoverName(tc.in); got != tc.want {
+				t.Fatalf("unexpected leftover match for %q: got %v want %v", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsAllowedUninstallDeletionPath(t *testing.T) {
+	home := "/home/tester"
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{name: "allow user binary", path: "/home/tester/.local/bin/talpa", want: true},
+		{name: "allow config canonical", path: "/home/tester/.config/talpa", want: true},
+		{name: "allow desktop entry", path: "/home/tester/.local/share/applications/talpa.desktop", want: true},
+		{name: "allow leftover", path: "/home/tester/.cache/talpa-temp", want: true},
+		{name: "deny generic home path", path: "/home/tester/Documents/talpa.txt", want: false},
+		{name: "deny unrelated config", path: "/home/tester/.config/not-talpa", want: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isAllowedUninstallDeletionPath(tc.path, home); got != tc.want {
+				t.Fatalf("unexpected allow result for %q: got %v want %v", tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestUninstallAllowedRoots(t *testing.T) {
+	home := "/home/tester"
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{name: "system binary", path: "/usr/local/bin/talpa", want: "/usr/local/bin"},
+		{name: "user binary", path: "/home/tester/.local/bin/talpa", want: "/home/tester/.local/bin"},
+		{name: "desktop", path: "/home/tester/.local/share/applications/talpa.desktop", want: "/home/tester/.local/share/applications"},
+		{name: "leftover", path: "/home/tester/.cache/talpa-temp", want: "/home/tester/.cache"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			roots := uninstallAllowedRoots(tc.path, home)
+			if len(roots) != 1 || roots[0] != tc.want {
+				t.Fatalf("unexpected roots for %q: got %#v want [%q]", tc.path, roots, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveTrustedExecutableRejectsWorldWritableBinary(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "apt-get")
+	if err := os.WriteFile(file, []byte("x"), 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	savedLookPath := lookPath
+	savedAbsPath := absPath
+	savedEval := evalSymlinks
+	defer func() {
+		lookPath = savedLookPath
+		absPath = savedAbsPath
+		evalSymlinks = savedEval
+	}()
+
+	lookPath = func(name string) (string, error) { return file, nil }
+	absPath = func(path string) (string, error) { return path, nil }
+	evalSymlinks = func(path string) (string, error) { return path, nil }
+
+	_, err := resolveTrustedExecutable("apt-get")
+	if err == nil {
+		t.Fatal("expected rejection for writable/untrusted executable")
+	}
+}
+
+func TestResolveTrustedExecutableRejectsWhenOwnerMetadataUnavailable(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "apt-get")
+	if err := os.WriteFile(file, []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	savedLookPath := lookPath
+	savedAbsPath := absPath
+	savedEval := evalSymlinks
+	savedStat := osStat
+	defer func() {
+		lookPath = savedLookPath
+		absPath = savedAbsPath
+		evalSymlinks = savedEval
+		osStat = savedStat
+	}()
+
+	lookPath = func(name string) (string, error) { return "/usr/bin/" + name, nil }
+	absPath = func(path string) (string, error) { return path, nil }
+	evalSymlinks = func(path string) (string, error) { return path, nil }
+	osStat = func(path string) (os.FileInfo, error) { return fakeOwnerlessFileInfo{}, nil }
+
+	_, err := resolveTrustedExecutable("apt-get")
+	if err == nil {
+		t.Fatal("expected rejection when owner metadata unavailable")
+	}
+}
+
+func TestResolveTrustedExecutableRejectsWhenOwnerNotRoot(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "apt-get")
+	if err := os.WriteFile(file, []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	savedLookPath := lookPath
+	savedAbsPath := absPath
+	savedEval := evalSymlinks
+	savedStat := osStat
+	defer func() {
+		lookPath = savedLookPath
+		absPath = savedAbsPath
+		evalSymlinks = savedEval
+		osStat = savedStat
+	}()
+
+	lookPath = func(name string) (string, error) { return "/usr/bin/" + name, nil }
+	absPath = func(path string) (string, error) { return path, nil }
+	evalSymlinks = func(path string) (string, error) { return path, nil }
+	osStat = func(path string) (os.FileInfo, error) { return fakeNonRootOwnerFileInfo{}, nil }
+
+	_, err := resolveTrustedExecutable("apt-get")
+	if err == nil {
+		t.Fatal("expected rejection for non-root owner")
+	}
+}
+
+func TestRunCommandRejectsUntrustedExecutionPath(t *testing.T) {
+	err := runCommand(context.Background(), "/tmp/evil-binary")
+	if err == nil {
+		t.Fatal("expected untrusted execution path rejection")
+	}
+}
+
+type fakeDirEntry struct {
+	name string
+	dir  bool
+}
+
+func (f fakeDirEntry) Name() string { return f.name }
+func (f fakeDirEntry) IsDir() bool  { return f.dir }
+func (f fakeDirEntry) Type() os.FileMode {
+	if f.dir {
+		return os.ModeDir
+	}
+	return 0
+}
+func (f fakeDirEntry) Info() (os.FileInfo, error) { return fakeFileInfo{name: f.name, dir: f.dir}, nil }
+
+type fakeFileInfo struct {
+	name string
+	dir  bool
+}
+
+func (f fakeFileInfo) Name() string { return f.name }
+func (f fakeFileInfo) Size() int64  { return 0 }
+func (f fakeFileInfo) Mode() os.FileMode {
+	if f.dir {
+		return os.ModeDir
+	}
+	return 0
+}
+func (f fakeFileInfo) ModTime() time.Time { return time.Time{} }
+func (f fakeFileInfo) IsDir() bool        { return f.dir }
+func (f fakeFileInfo) Sys() interface{}   { return nil }
+
+type fakeNonRootOwnerFileInfo struct{}
+
+func (f fakeNonRootOwnerFileInfo) Name() string       { return "non-root" }
+func (f fakeNonRootOwnerFileInfo) Size() int64        { return 0 }
+func (f fakeNonRootOwnerFileInfo) Mode() os.FileMode  { return 0o755 }
+func (f fakeNonRootOwnerFileInfo) ModTime() time.Time { return time.Time{} }
+func (f fakeNonRootOwnerFileInfo) IsDir() bool        { return false }
+func (f fakeNonRootOwnerFileInfo) Sys() interface{}   { return &syscall.Stat_t{Uid: 1000} }
+
+type fakeOwnerlessFileInfo struct{}
+
+func (f fakeOwnerlessFileInfo) Name() string       { return "ownerless" }
+func (f fakeOwnerlessFileInfo) Size() int64        { return 0 }
+func (f fakeOwnerlessFileInfo) Mode() os.FileMode  { return 0o755 }
+func (f fakeOwnerlessFileInfo) ModTime() time.Time { return time.Time{} }
+func (f fakeOwnerlessFileInfo) IsDir() bool        { return false }
+func (f fakeOwnerlessFileInfo) Sys() interface{}   { return nil }

@@ -33,7 +33,7 @@ func TestRunDryRunGoldenJSON(t *testing.T) {
 	}
 
 	app := &common.AppContext{Options: common.GlobalOptions{DryRun: true}, Logger: logging.NewNoopLogger()}
-	res, err := NewService().Run(context.Background(), app, []string{filepath.Join(home, "Projects")})
+	res, err := NewService().Run(context.Background(), app, []string{filepath.Join(home, "Projects")}, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

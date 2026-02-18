@@ -7,7 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"talpa/internal/app/common"
@@ -38,8 +40,10 @@ var (
 	osUserHomeDir      = os.UserHomeDir
 	osExecutable       = os.Executable
 	osStat             = os.Stat
+	osReadDir          = os.ReadDir
 	lookPath           = exec.LookPath
 	absPath            = filepath.Abs
+	evalSymlinks       = filepath.EvalSymlinks
 	resolveExec        = resolveTrustedExecutable
 	runCmd             = runCommand
 	getEUID            = os.Geteuid
@@ -83,6 +87,7 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 		newPlanItem("uninstall-3", "uninstall.config", filepath.Join(home, ".config", "talpa"), "config", model.RiskMedium),
 		newPlanItem("uninstall-4", "uninstall.cache", filepath.Join(home, ".cache", "talpa"), "cache", model.RiskLow),
 	)
+	items = append(items, discoverUninstallArtifacts(home, len(items)+1)...)
 	for i, t := range targets {
 		adapter, ok := adapterForBackend(t.Backend, adapters)
 		if !ok {
@@ -227,6 +232,15 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 					Risk:      string(items[i].Risk),
 					DryRun:    false,
 				}
+				if !isAllowedUninstallDeletionPath(items[i].Path, home) {
+					items[i].Result = "skipped"
+					entry.Result = items[i].Result
+					entry.Error = "path outside uninstall deletion scope"
+					if err := app.Logger.Log(ctx, entry); err != nil {
+						errCount++
+					}
+					continue
+				}
 				if err := pathValidateSystem(items[i].Path, app.Whitelist); err != nil {
 					items[i].Result = "skipped"
 					entry.Result = items[i].Result
@@ -243,7 +257,7 @@ func (Service) Run(ctx context.Context, app *common.AppContext, opts Options) (m
 					}
 					continue
 				}
-				if err := safeDelete(items[i].Path, nil, app.Whitelist, false); err != nil {
+				if err := safeDelete(items[i].Path, uninstallAllowedRoots(items[i].Path, home), app.Whitelist, false); err != nil {
 					items[i].Result = "error"
 					errCount++
 				} else {
@@ -380,9 +394,23 @@ func parseUninstallTarget(v string) (uninstallTarget, error) {
 }
 
 func runCommand(ctx context.Context, name string, args ...string) error {
+	abs, err := absPath(name)
+	if err != nil {
+		return err
+	}
+	resolved, err := evalSymlinks(abs)
+	if err != nil {
+		return fmt.Errorf("cannot resolve executable symlink: %w", err)
+	}
+	if !isTrustedExecutablePath(resolved) {
+		return fmt.Errorf("untrusted executable path: %s", resolved)
+	}
+	if err := validateTrustedExecutableFile(resolved); err != nil {
+		return err
+	}
 	cmdCtx, cancel := withDefaultTimeout(ctx, 10*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(cmdCtx, name, args...)
+	cmd := exec.CommandContext(cmdCtx, resolved, args...)
 	return cmd.Run()
 }
 
@@ -405,7 +433,39 @@ func resolveTrustedExecutable(name string) (string, error) {
 	if !isTrustedExecutablePath(abs) {
 		return "", fmt.Errorf("untrusted executable path: %s", abs)
 	}
+	resolvedPath, err := evalSymlinks(abs)
+	if err != nil {
+		return "", fmt.Errorf("cannot resolve executable symlink: %w", err)
+	}
+	if !isTrustedExecutablePath(resolvedPath) {
+		return "", fmt.Errorf("untrusted executable path: %s", resolvedPath)
+	}
+	abs = resolvedPath
+	if err := validateTrustedExecutableFile(abs); err != nil {
+		return "", err
+	}
 	return abs, nil
+}
+
+func validateTrustedExecutableFile(path string) error {
+	fi, err := osStat(path)
+	if err != nil {
+		return err
+	}
+	if fi == nil {
+		return fmt.Errorf("untrusted executable metadata: %s", path)
+	}
+	if fi.Mode().Perm()&0o022 != 0 {
+		return fmt.Errorf("untrusted executable permissions: %s", path)
+	}
+	stat, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("cannot verify executable owner: %s", path)
+	}
+	if stat.Uid != 0 {
+		return fmt.Errorf("untrusted executable owner: %s", path)
+	}
+	return nil
 }
 
 func isTrustedExecutablePath(path string) bool {
@@ -521,6 +581,184 @@ func isValidFlatpakTargetName(name string) bool {
 		}
 	}
 	return true
+}
+
+func discoverUninstallArtifacts(home string, startIndex int) []model.CandidateItem {
+	seen := map[string]struct{}{
+		filepath.Clean(filepath.Join(home, ".local", "bin", "talpa")): {},
+		filepath.Clean("/usr/local/bin/talpa"):                        {},
+		filepath.Clean(filepath.Join(home, ".config", "talpa")):       {},
+		filepath.Clean(filepath.Join(home, ".cache", "talpa")):        {},
+	}
+
+	type discovered struct {
+		ruleID       string
+		path         string
+		category     string
+		risk         model.RiskLevel
+		requiresRoot bool
+	}
+	out := make([]discovered, 0, 16)
+
+	add := func(ruleID, path, category string, risk model.RiskLevel, requiresRoot bool) {
+		n := filepath.Clean(path)
+		if n == "." || n == "" {
+			return
+		}
+		if _, ok := seen[n]; ok {
+			return
+		}
+		seen[n] = struct{}{}
+		out = append(out, discovered{
+			ruleID:       ruleID,
+			path:         n,
+			category:     category,
+			risk:         risk,
+			requiresRoot: requiresRoot,
+		})
+	}
+
+	for _, d := range []struct {
+		dir          string
+		ruleID       string
+		requiresRoot bool
+	}{
+		{dir: filepath.Join(home, ".local", "share", "applications"), ruleID: "uninstall.desktop.user", requiresRoot: false},
+	} {
+		entries, err := osReadDir(d.dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := strings.ToLower(e.Name())
+			if !strings.HasSuffix(name, ".desktop") || !strings.Contains(name, "talpa") {
+				continue
+			}
+			add(d.ruleID, filepath.Join(d.dir, e.Name()), "desktop_entry", model.RiskMedium, d.requiresRoot)
+		}
+	}
+
+	for _, root := range []string{
+		filepath.Join(home, ".local", "share"),
+		filepath.Join(home, ".local", "state"),
+		filepath.Join(home, ".config"),
+		filepath.Join(home, ".cache"),
+	} {
+		entries, err := osReadDir(root)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			name := e.Name()
+			if !isTalpaLeftoverName(name) {
+				continue
+			}
+			add("uninstall.leftover", filepath.Join(root, name), "leftover", model.RiskMedium, false)
+		}
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ruleID == out[j].ruleID {
+			return out[i].path < out[j].path
+		}
+		return out[i].ruleID < out[j].ruleID
+	})
+
+	items := make([]model.CandidateItem, 0, len(out))
+	for i, d := range out {
+		items = append(items, model.CandidateItem{
+			ID:           fmt.Sprintf("uninstall-%d", startIndex+i),
+			RuleID:       d.ruleID,
+			Path:         d.path,
+			Category:     d.category,
+			Risk:         d.risk,
+			Selected:     true,
+			RequiresRoot: d.requiresRoot,
+			LastModified: time.Now().UTC(),
+			Result:       "planned",
+		})
+	}
+
+	return items
+}
+
+func isTalpaLeftoverName(name string) bool {
+	v := strings.ToLower(strings.TrimSpace(name))
+	if v == "" {
+		return false
+	}
+	if v == "talpa" {
+		return true
+	}
+	for _, p := range []string{"talpa-", "talpa_", "talpa."} {
+		if strings.HasPrefix(v, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func isAllowedUninstallDeletionPath(path, home string) bool {
+	n := filepath.Clean(path)
+	h := filepath.Clean(home)
+
+	canonical := map[string]struct{}{
+		filepath.Clean("/usr/local/bin/talpa"):                     {},
+		filepath.Clean(filepath.Join(h, ".local", "bin", "talpa")): {},
+		filepath.Clean(filepath.Join(h, ".config", "talpa")):       {},
+		filepath.Clean(filepath.Join(h, ".cache", "talpa")):        {},
+	}
+	if _, ok := canonical[n]; ok {
+		return true
+	}
+
+	userDesktopDir := filepath.Clean(filepath.Join(h, ".local", "share", "applications"))
+	if strings.HasPrefix(n, userDesktopDir+string(filepath.Separator)) {
+		base := strings.ToLower(filepath.Base(n))
+		if strings.HasSuffix(base, ".desktop") && strings.Contains(base, "talpa") {
+			return true
+		}
+	}
+
+	for _, root := range []string{
+		filepath.Clean(filepath.Join(h, ".local", "share")),
+		filepath.Clean(filepath.Join(h, ".local", "state")),
+		filepath.Clean(filepath.Join(h, ".config")),
+		filepath.Clean(filepath.Join(h, ".cache")),
+	} {
+		if strings.HasPrefix(n, root+string(filepath.Separator)) && isTalpaLeftoverName(filepath.Base(n)) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func uninstallAllowedRoots(path, home string) []string {
+	n := filepath.Clean(path)
+	h := filepath.Clean(home)
+	if n == filepath.Clean("/usr/local/bin/talpa") {
+		return []string{"/usr/local/bin"}
+	}
+	for _, root := range []string{
+		filepath.Clean(filepath.Join(h, ".local", "bin")),
+		filepath.Clean(filepath.Join(h, ".local", "share", "applications")),
+		filepath.Clean(filepath.Join(h, ".local", "share")),
+		filepath.Clean(filepath.Join(h, ".local", "state")),
+		filepath.Clean(filepath.Join(h, ".config")),
+		filepath.Clean(filepath.Join(h, ".cache")),
+	} {
+		if n == root || strings.HasPrefix(n, root+string(filepath.Separator)) {
+			return []string{root}
+		}
+	}
+	if dir := filepath.Dir(n); dir != "." && dir != "/" {
+		return []string{dir}
+	}
+	return nil
 }
 
 func newPlanItem(id, ruleID, path, category string, risk model.RiskLevel) model.CandidateItem {

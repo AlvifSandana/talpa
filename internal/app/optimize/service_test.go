@@ -3,7 +3,10 @@ package optimize
 import (
 	"context"
 	"errors"
+	"os"
+	"syscall"
 	"testing"
+	"time"
 
 	"talpa/internal/app/common"
 	"talpa/internal/infra/logging"
@@ -34,6 +37,8 @@ func TestRunPlan(t *testing.T) {
 func TestRunApplyMarksPendingWithConfirmation(t *testing.T) {
 	savedLookPath := lookPath
 	savedAbsPath := absPath
+	savedEval := evalSymlinks
+	savedStat := osStat
 	savedRun := runCmd
 	savedUID := getEUID
 	savedLowBattery := checkLowBattery
@@ -42,6 +47,8 @@ func TestRunApplyMarksPendingWithConfirmation(t *testing.T) {
 	defer func() {
 		lookPath = savedLookPath
 		absPath = savedAbsPath
+		evalSymlinks = savedEval
+		osStat = savedStat
 		runCmd = savedRun
 		getEUID = savedUID
 		checkLowBattery = savedLowBattery
@@ -51,6 +58,10 @@ func TestRunApplyMarksPendingWithConfirmation(t *testing.T) {
 
 	lookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
 	absPath = func(path string) (string, error) { return path, nil }
+	evalSymlinks = func(path string) (string, error) { return path, nil }
+	osStat = func(path string) (os.FileInfo, error) {
+		return trustedTestFileInfo{}, nil
+	}
 	runCmd = func(ctx context.Context, name string, args ...string) error { return nil }
 	getEUID = func() int { return 0 }
 	checkLowBattery = func() bool { return false }
@@ -72,6 +83,8 @@ func TestRunApplyMarksPendingWithConfirmation(t *testing.T) {
 func TestRunApplyCommandFailure(t *testing.T) {
 	savedLookPath := lookPath
 	savedAbsPath := absPath
+	savedEval := evalSymlinks
+	savedStat := osStat
 	savedRun := runCmd
 	savedUID := getEUID
 	savedLowBattery := checkLowBattery
@@ -80,6 +93,8 @@ func TestRunApplyCommandFailure(t *testing.T) {
 	defer func() {
 		lookPath = savedLookPath
 		absPath = savedAbsPath
+		evalSymlinks = savedEval
+		osStat = savedStat
 		runCmd = savedRun
 		getEUID = savedUID
 		checkLowBattery = savedLowBattery
@@ -89,6 +104,10 @@ func TestRunApplyCommandFailure(t *testing.T) {
 
 	lookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
 	absPath = func(path string) (string, error) { return path, nil }
+	evalSymlinks = func(path string) (string, error) { return path, nil }
+	osStat = func(path string) (os.FileInfo, error) {
+		return trustedTestFileInfo{}, nil
+	}
 	runCmd = func(ctx context.Context, name string, args ...string) error { return errors.New("failed") }
 	getEUID = func() int { return 0 }
 	checkLowBattery = func() bool { return false }
@@ -108,6 +127,8 @@ func TestRunApplyCommandFailure(t *testing.T) {
 func TestRunApplySkipsWhenNotRoot(t *testing.T) {
 	savedLookPath := lookPath
 	savedAbsPath := absPath
+	savedEval := evalSymlinks
+	savedStat := osStat
 	savedRun := runCmd
 	savedUID := getEUID
 	savedLowBattery := checkLowBattery
@@ -116,6 +137,8 @@ func TestRunApplySkipsWhenNotRoot(t *testing.T) {
 	defer func() {
 		lookPath = savedLookPath
 		absPath = savedAbsPath
+		evalSymlinks = savedEval
+		osStat = savedStat
 		runCmd = savedRun
 		getEUID = savedUID
 		checkLowBattery = savedLowBattery
@@ -125,6 +148,10 @@ func TestRunApplySkipsWhenNotRoot(t *testing.T) {
 
 	lookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
 	absPath = func(path string) (string, error) { return path, nil }
+	evalSymlinks = func(path string) (string, error) { return path, nil }
+	osStat = func(path string) (os.FileInfo, error) {
+		return trustedTestFileInfo{}, nil
+	}
 	called := false
 	runCmd = func(ctx context.Context, name string, args ...string) error {
 		called = true
@@ -153,9 +180,13 @@ func TestRunApplySkipsWhenNotRoot(t *testing.T) {
 func TestRunPlanMarksUnavailableAdapterSkipped(t *testing.T) {
 	savedLookPath := lookPath
 	savedAbsPath := absPath
+	savedEval := evalSymlinks
+	savedStat := osStat
 	defer func() {
 		lookPath = savedLookPath
 		absPath = savedAbsPath
+		evalSymlinks = savedEval
+		osStat = savedStat
 	}()
 
 	lookPath = func(file string) (string, error) {
@@ -165,14 +196,18 @@ func TestRunPlanMarksUnavailableAdapterSkipped(t *testing.T) {
 		return "/usr/bin/" + file, nil
 	}
 	absPath = func(path string) (string, error) { return path, nil }
+	evalSymlinks = func(path string) (string, error) { return path, nil }
+	osStat = func(path string) (os.FileInfo, error) {
+		return trustedTestFileInfo{}, nil
+	}
 
 	app := &common.AppContext{Options: common.GlobalOptions{DryRun: true}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Summary.ItemsSelected != 3 {
-		t.Fatalf("expected 3 selected adapters, got %d", res.Summary.ItemsSelected)
+	if res.Summary.ItemsSelected != 7 {
+		t.Fatalf("expected 7 selected adapters, got %d", res.Summary.ItemsSelected)
 	}
 	for _, it := range res.Items {
 		if it.RuleID == "optimize.dnf.clean" {
@@ -189,6 +224,8 @@ func TestRunPlanMarksUnavailableAdapterSkipped(t *testing.T) {
 func TestRunApplySkipsWhenPreflightBlocked(t *testing.T) {
 	savedLookPath := lookPath
 	savedAbsPath := absPath
+	savedEval := evalSymlinks
+	savedStat := osStat
 	savedRun := runCmd
 	savedUID := getEUID
 	savedLowBattery := checkLowBattery
@@ -197,6 +234,8 @@ func TestRunApplySkipsWhenPreflightBlocked(t *testing.T) {
 	defer func() {
 		lookPath = savedLookPath
 		absPath = savedAbsPath
+		evalSymlinks = savedEval
+		osStat = savedStat
 		runCmd = savedRun
 		getEUID = savedUID
 		checkLowBattery = savedLowBattery
@@ -206,6 +245,10 @@ func TestRunApplySkipsWhenPreflightBlocked(t *testing.T) {
 
 	lookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
 	absPath = func(path string) (string, error) { return path, nil }
+	evalSymlinks = func(path string) (string, error) { return path, nil }
+	osStat = func(path string) (os.FileInfo, error) {
+		return trustedTestFileInfo{}, nil
+	}
 	called := false
 	runCmd = func(ctx context.Context, name string, args ...string) error {
 		called = true
@@ -324,3 +367,103 @@ func TestCmdlineFirstArg(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveTrustedExecutableRejectsUntrustedPath(t *testing.T) {
+	savedLookPath := lookPath
+	savedAbsPath := absPath
+	savedStat := osStat
+	savedEval := evalSymlinks
+	defer func() {
+		lookPath = savedLookPath
+		absPath = savedAbsPath
+		osStat = savedStat
+		evalSymlinks = savedEval
+	}()
+
+	lookPath = func(file string) (string, error) { return "/tmp/fake-" + file, nil }
+	absPath = func(path string) (string, error) { return path, nil }
+	osStat = func(path string) (os.FileInfo, error) { return trustedTestFileInfo{}, nil }
+
+	_, err := resolveTrustedExecutable("apt-get")
+	if err == nil {
+		t.Fatal("expected untrusted path error")
+	}
+}
+
+func TestResolveTrustedExecutableRejectsWhenOwnerMetadataUnavailable(t *testing.T) {
+	savedLookPath := lookPath
+	savedAbsPath := absPath
+	savedStat := osStat
+	defer func() {
+		lookPath = savedLookPath
+		absPath = savedAbsPath
+		osStat = savedStat
+	}()
+
+	lookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
+	absPath = func(path string) (string, error) { return path, nil }
+	evalSymlinks = func(path string) (string, error) { return path, nil }
+	osStat = func(path string) (os.FileInfo, error) { return noOwnerInfoTestFileInfo{}, nil }
+
+	_, err := resolveTrustedExecutable("apt-get")
+	if err == nil {
+		t.Fatal("expected rejection when owner metadata unavailable")
+	}
+}
+
+func TestResolveTrustedExecutableRejectsWhenOwnerNotRoot(t *testing.T) {
+	savedLookPath := lookPath
+	savedAbsPath := absPath
+	savedStat := osStat
+	savedEval := evalSymlinks
+	defer func() {
+		lookPath = savedLookPath
+		absPath = savedAbsPath
+		osStat = savedStat
+		evalSymlinks = savedEval
+	}()
+
+	lookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
+	absPath = func(path string) (string, error) { return path, nil }
+	evalSymlinks = func(path string) (string, error) { return path, nil }
+	osStat = func(path string) (os.FileInfo, error) { return nonRootOwnerTestFileInfo{}, nil }
+
+	_, err := resolveTrustedExecutable("apt-get")
+	if err == nil {
+		t.Fatal("expected rejection for non-root owner")
+	}
+}
+
+func TestRunCommandRejectsUntrustedPathAtExecutionTime(t *testing.T) {
+	err := runCommand(context.Background(), "/tmp/evil-binary")
+	if err == nil {
+		t.Fatal("expected untrusted execution path rejection")
+	}
+}
+
+type trustedTestFileInfo struct{}
+
+func (trustedTestFileInfo) Name() string       { return "trusted" }
+func (trustedTestFileInfo) Size() int64        { return 0 }
+func (trustedTestFileInfo) Mode() os.FileMode  { return 0o755 }
+func (trustedTestFileInfo) ModTime() time.Time { return time.Time{} }
+func (trustedTestFileInfo) IsDir() bool        { return false }
+func (trustedTestFileInfo) Sys() interface{}   { return &syscall.Stat_t{Uid: 0} }
+
+type nonRootOwnerTestFileInfo struct{}
+
+func (nonRootOwnerTestFileInfo) Name() string       { return "non-root" }
+func (nonRootOwnerTestFileInfo) Size() int64        { return 0 }
+func (nonRootOwnerTestFileInfo) Mode() os.FileMode  { return 0o755 }
+func (nonRootOwnerTestFileInfo) ModTime() time.Time { return time.Time{} }
+func (nonRootOwnerTestFileInfo) IsDir() bool        { return false }
+func (nonRootOwnerTestFileInfo) Sys() interface{}   { return &syscall.Stat_t{Uid: 1000} }
+
+type noOwnerInfoTestFileInfo struct{}
+
+func (noOwnerInfoTestFileInfo) Name() string       { return "no-owner" }
+func (noOwnerInfoTestFileInfo) Size() int64        { return 0 }
+func (noOwnerInfoTestFileInfo) Mode() os.FileMode  { return 0o755 }
+func (noOwnerInfoTestFileInfo) ModTime() time.Time { return time.Time{} }
+func (noOwnerInfoTestFileInfo) IsDir() bool        { return false }
+func (noOwnerInfoTestFileInfo) Sys() interface{}   { return nil }

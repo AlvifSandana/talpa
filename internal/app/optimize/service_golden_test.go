@@ -18,9 +18,13 @@ import (
 func TestRunDryRunGoldenJSON(t *testing.T) {
 	savedLookPath := lookPath
 	savedAbsPath := absPath
+	savedEval := evalSymlinks
+	savedStat := osStat
 	defer func() {
 		lookPath = savedLookPath
 		absPath = savedAbsPath
+		evalSymlinks = savedEval
+		osStat = savedStat
 	}()
 
 	lookPath = func(file string) (string, error) {
@@ -34,6 +38,8 @@ func TestRunDryRunGoldenJSON(t *testing.T) {
 		}
 	}
 	absPath = func(path string) (string, error) { return path, nil }
+	evalSymlinks = func(path string) (string, error) { return path, nil }
+	osStat = func(path string) (os.FileInfo, error) { return trustedTestFileInfo{}, nil }
 
 	app := &common.AppContext{Options: common.GlobalOptions{DryRun: true}, Logger: logging.NewNoopLogger()}
 	res, err := NewService().Run(context.Background(), app, Options{})

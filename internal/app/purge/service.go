@@ -16,12 +16,23 @@ import (
 
 type Service struct{}
 
+type Options struct {
+	MaxDepth   int
+	RecentDays int
+}
+
 func NewService() Service { return Service{} }
 
-func (Service) Run(ctx context.Context, app *common.AppContext, paths []string) (model.CommandResult, error) {
+func (Service) Run(ctx context.Context, app *common.AppContext, paths []string, opts Options) (model.CommandResult, error) {
 	start := time.Now()
 	if len(paths) == 0 {
 		paths = defaultPaths()
+	}
+	if opts.MaxDepth <= 0 {
+		opts.MaxDepth = 4
+	}
+	if opts.RecentDays <= 0 {
+		opts.RecentDays = 7
 	}
 
 	ruleSet := rules.PurgeArtifactRules()
@@ -35,11 +46,25 @@ func (Service) Run(ctx context.Context, app *common.AppContext, paths []string) 
 	selected := 0
 	var estimate int64
 	errCount := 0
+	seenPaths := make(map[string]struct{}, 64)
 
 	for _, root := range paths {
+		if err := safety.ValidatePath(root, []string{home}, app.Whitelist); err != nil {
+			errCount++
+			continue
+		}
 		_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
+
 			if err != nil || d == nil || !d.IsDir() {
 				return nil
+			}
+			if opts.MaxDepth > 0 && depth(root, path) > opts.MaxDepth {
+				return filepath.SkipDir
 			}
 
 			name := d.Name()
@@ -49,18 +74,26 @@ func (Service) Run(ctx context.Context, app *common.AppContext, paths []string) 
 			}
 
 			size := dirSize(path)
-			recent := isRecent(path, 7)
+			recent := isRecent(path, opts.RecentDays)
+			modified := time.Now().UTC()
+			if st, statErr := os.Stat(path); statErr == nil {
+				modified = st.ModTime().UTC()
+			}
 			item := model.CandidateItem{
 				ID:           "purge-" + sanitizeID(path),
 				RuleID:       rule.ID,
 				Path:         path,
 				SizeBytes:    size,
-				LastModified: time.Now().UTC(),
+				LastModified: modified,
 				Category:     rule.Category,
 				Risk:         rule.Risk,
 				Selected:     !recent,
 				RequiresRoot: rule.RequiresRoot,
 				Result:       "planned",
+			}
+			if _, exists := seenPaths[item.Path]; exists {
+				item.Selected = false
+				item.Result = "skipped"
 			}
 
 			if err := safety.ValidatePath(path, []string{home}, app.Whitelist); err != nil {
@@ -72,11 +105,16 @@ func (Service) Run(ctx context.Context, app *common.AppContext, paths []string) 
 			if item.Selected {
 				selected++
 				estimate += size
+				seenPaths[item.Path] = struct{}{}
 			}
 
 			items = append(items, item)
 			return filepath.SkipDir
 		})
+		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			errCount++
+			break
+		}
 	}
 
 	if !app.Options.DryRun {
@@ -164,6 +202,14 @@ func sanitizeID(path string) string {
 		path = path[len(path)-64:]
 	}
 	return path
+}
+
+func depth(root, path string) int {
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == "." {
+		return 0
+	}
+	return len(strings.Split(rel, string(filepath.Separator)))
 }
 
 func dirSize(path string) int64 {

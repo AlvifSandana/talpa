@@ -38,7 +38,13 @@ func (Service) Run(ctx context.Context, app *common.AppContext, root string, opt
 		root = h
 	}
 
-	items, err := filesystem.Scan(root, filesystem.ScanOptions{MaxDepth: opts.Depth, Excludes: []string{"/proc", "/sys", "/dev", "/run"}})
+	items, err := filesystem.Scan(root, filesystem.ScanOptions{
+		MaxDepth:       opts.Depth,
+		Excludes:       []string{"/proc", "/sys", "/dev", "/run"},
+		SkipMountpoint: false,
+		SkipNetworkFS:  true,
+		Context:        ctx,
+	})
 	if err != nil {
 		return model.CommandResult{}, err
 	}
